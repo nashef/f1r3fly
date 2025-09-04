@@ -6,12 +6,9 @@ This document describes developer setup and build commands for RChain project us
 
 ## Nix
 
-Install Nix https://nixos.org/download.html
+### Install Nix
 
-### MacOS
-```
-sh <(curl -L https://nixos.org/nix/install)
-```
+The official instructions are here: https://nixos.org/download.html
 
 ### Windows
 
@@ -50,6 +47,31 @@ hello: command not found
 
 More info on Nix -> https://nixos.org/manual/nix/stable/introduction.html
 
+### Configure Nix
+
+Once you have installed nix, run the following:
+
+```bash
+mkdir -p ~/.config/nix
+touch ~/.config/nix/nix.conf
+```
+
+Edit the `nix.conf` from above with your favorite editor and add the following:
+
+```bash
+experimental-features = flakes nix-command
+```
+
+Add the `direnv` configuration to your shell. For `zshrc` that looks like this:
+
+```zsh
+eval "$(direnv hook zsh)"
+plugins=(... direnv)
+```
+
+Now, when you cd into the project directory, `direnv` will run flakes to download all the dependencies and prepare the environment.
+
+
 ## CI
 We have a CI server setup with NixOs using shell script to pull the release every hour. Check with Discord to find the current location.
 
@@ -64,37 +86,37 @@ ssh-add -K ~/.ssh/<key-name>
 
 ```sh
 # Compile
-[nix-shell:~/src/rchain]$ sbt compile
+[nix-shell:~/src/f1r3fly]$ sbt compile
 
 # Compile with tests
-[nix-shell:~/src/rchain]$ sbt test:compile
+[nix-shell:~/src/f1r3fly]$ sbt test:compile
 
 # Compile and create local executable
-# path: rchain/node/target/universal/stage/bin/rnode
-[nix-shell:~/src/rchain]$ sbt stage
+# path: f1r3fly/node/target/universal/stage/bin/rnode
+[nix-shell:~/src/f1r3fly]$ sbt stage
 
 # Clean project (except bnfc generated Java code)
-[nix-shell:~/src/rchain]$ sbt clean
+[nix-shell:~/src/f1r3fly]$ sbt clean
 
-[nix-shell:~/src/rchain]$ sbt clearCaches
+[nix-shell:~/src/f1r3fly]$ sbt clearCaches
 
 # Clean, compile, and create local executable
-[nix-shell:~/src/rchain]$ sbt clean compile stage
+[nix-shell:~/src/f1r3fly]$ sbt clean compile stage
 
 # List rnode options
-[nix-shell:~/src/rchain]$ rnode
+[nix-shell:~/src/f1r3fly]$ rnode
 
 # Run stand-alone node
-[nix-shell:~/src/rchain]$ rnode run --standalone
+[nix-shell:~/src/f1r3fly]$ rnode run --standalone
 
 # Check node status
-[nix-shell:~/src/rchain]$ rnode status
+[nix-shell:~/src/f1r3fly]$ rnode status
 
 # Run .rho files (have running node in separate shell)
-[nix-shell:~/src/rchain]$ rnode eval <path_to_file> # (i.e. rholang/examples/hello_world_again.rho)
+[nix-shell:~/src/f1r3fly]$ rnode eval <path_to_file> # (i.e. rholang/examples/hello_world_again.rho)
 
 # Run .rho files (have ip address and port of node)
-[nix-shell:~/src/rchain]$ rnode --grpc-host <ip_address> --grpc-port <internal_port> eval <path_to_file> # (i.e. rholang/examples/hello_world_again.rho)
+[nix-shell:~/src/f1r3fly]$ rnode --grpc-host <ip_address> --grpc-port <internal_port> eval <path_to_file> # (i.e. rholang/examples/hello_world_again.rho)
 ```
 
 Can also use JS implementation for eval -> https://github.com/spreston8/rnode-repl
@@ -107,19 +129,19 @@ Can also use JS implementation for eval -> https://github.com/spreston8/rnode-re
 sbt
 
 # Compile
-sbt:rchain> compile
+sbt:f1r3fly> compile
 
 # Compile with tests
-sbt:rchain> test:compile
+sbt:f1r3fly> test:compile
 
 # Compile and create local executable
 # path: ./node/target/universal/stage/bin/rnode
-sbt:rchain> stage
+sbt:f1r3fly> stage
 
 # Clean project (except bnfc generated Java code)
-sbt:rchain> clean
+sbt:f1r3fly> clean
 
-sbt:rchain> clearCaches
+sbt:f1r3fly> clearCaches
 ```
 
 
@@ -153,7 +175,7 @@ Nix package versions: https://lazamar.co.uk/nix-versions/
 - Copy ssh keys to Ubuntu: `cp -r /mnt/c/Users/<username>/.ssh ~/.ssh` or `cp -r /mnt/c/Users/<username>/.ssh/<file-name> ~/.ssh`
 - - If bad permission, then change for specefied file: `chmod 600 ~/.ssh/<file-name>`
 - Test connection: `ssh -T git@github.com`
-- Create src directory: `mkdir src && cd src` and clone project `git clone git@github.com:rchain/rchain.git`
+- Create src directory: `mkdir src && cd src` and clone project `git clone git@github.com:f1r3fly/f1r3fly.git`
 
 ## Using with NIX-ENV (old docs)
 
@@ -215,7 +237,7 @@ sbt compile
 # Compile with tests
 sbt test:compile
 # Compile and create local executable
-# path: rchain/node/target/universal/stage/bin/rnode
+# path: f1r3fly/node/target/universal/stage/bin/rnode
 sbt stage
 # Compile Docker image
 sbt docker:publishLocal
@@ -238,7 +260,7 @@ export SBT_OPTS="-Xmx4g -Xss2m -Dsbt.supershell=false"
 # Enter sbt interactive mode
 sbt
 # sbt entering interactive mode
-# sbt:rchain>
+# sbt:f1r3fly>
 # Compile
 compile
 # Compile with tests
