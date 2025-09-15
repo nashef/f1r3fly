@@ -315,6 +315,28 @@ object RhoRuntime {
     envEnabled.getOrElse(configEnabled.getOrElse(false))
   }
 
+  private[interpreter] def isNuNetEnabled: Boolean = {
+    import com.typesafe.config.ConfigFactory
+    import java.util.Locale
+    val config = ConfigFactory.load()
+    // Check environment variable first (highest priority)
+    val envEnabled = Option(System.getenv("NUNET_ENABLED")).flatMap { value =>
+      value.toLowerCase(Locale.ENGLISH) match {
+        case "true" | "1" | "yes" | "on"  => Some(true)
+        case "false" | "0" | "no" | "off" => Some(false)
+        case _                            => None // Invalid env var value, ignore it
+      }
+    }
+    // Check configuration as fallback
+    val configEnabled = if (config.hasPath("nunet.enabled")) {
+      Some(config.getBoolean("nunet.enabled"))
+    } else {
+      None
+    }
+    // Resolve final enabled state: env takes priority, then config, then default false
+    envEnabled.getOrElse(configEnabled.getOrElse(false))
+  }
+
   def apply[F[_]: Sync: Span](
       reducer: Reduce[F],
       space: RhoISpace[F],
@@ -533,6 +555,41 @@ object RhoRuntime {
     )
   )
 
+  def stdRhoNuNetProcesses[F[_]]: Seq[Definition[F]] = Seq(
+    Definition[F](
+      "rho:nunet:deploy",
+      FixedChannels.NUNET_DEPLOY,
+      2,
+      BodyRefs.NUNET_DEPLOY, { ctx =>
+        ctx.systemProcesses.nunetDeploy
+      }
+    ),
+    Definition[F](
+      "rho:nunet:status",
+      FixedChannels.NUNET_STATUS,
+      2,
+      BodyRefs.NUNET_STATUS, { ctx =>
+        ctx.systemProcesses.nunetStatus
+      }
+    ),
+    Definition[F](
+      "rho:nunet:nodes",
+      FixedChannels.NUNET_NODES,
+      1,
+      BodyRefs.NUNET_NODES, { ctx =>
+        ctx.systemProcesses.nunetNodes
+      }
+    ),
+    Definition[F](
+      "rho:nunet:deploy-rnode",
+      FixedChannels.NUNET_DEPLOY_RNODE,
+      1,
+      BodyRefs.NUNET_DEPLOY_RNODE, { ctx =>
+        ctx.systemProcesses.nunetDeployRNode
+      }
+    )
+  )
+
   def dispatchTableCreator[F[_]: Concurrent: Span](
       space: RhoTuplespace[F],
       dispatcher: RhoDispatch[F],
@@ -540,11 +597,13 @@ object RhoRuntime {
       invalidBlocks: InvalidBlocks[F],
       extraSystemProcesses: Seq[Definition[F]],
       openAIService: OpenAIService,
-      ollamaService: OllamaService
+      ollamaService: OllamaService,
+      nunetService: NuNetService
   ): RhoDispatchMap[F] = {
     val aiProcesses     = if (isOpenAIEnabled) stdRhoAIProcesses[F] else Seq.empty
     val ollamaProcesses = if (isOllamaEnabled) stdRhoOllamaProcesses[F] else Seq.empty
-    (stdSystemProcesses[F] ++ stdRhoCryptoProcesses[F] ++ aiProcesses ++ ollamaProcesses ++ extraSystemProcesses)
+    val nunetProcesses  = if (isNuNetEnabled) stdRhoNuNetProcesses[F] else Seq.empty
+    (stdSystemProcesses[F] ++ stdRhoCryptoProcesses[F] ++ aiProcesses ++ ollamaProcesses ++ nunetProcesses ++ extraSystemProcesses)
       .map(
         _.toDispatchTable(
           ProcessContext(
@@ -553,7 +612,8 @@ object RhoRuntime {
             blockData,
             invalidBlocks,
             openAIService,
-            ollamaService
+            ollamaService,
+            nunetService
           )
         )
       )
@@ -578,7 +638,8 @@ object RhoRuntime {
       mergeChs: Ref[F, Set[Par]],
       mergeableTagName: Par,
       openAIService: OpenAIService,
-      ollamaService: OllamaService
+      ollamaService: OllamaService,
+      nunetService: NuNetService
   ): Reduce[F] = {
     lazy val replayDispatchTable: RhoDispatchMap[F] =
       dispatchTableCreator(
@@ -588,7 +649,8 @@ object RhoRuntime {
         invalidBlocks,
         extraSystemProcesses,
         openAIService,
-        ollamaService
+        ollamaService,
+        nunetService
       )
 
     lazy val (replayDispatcher, replayReducer) =
@@ -612,9 +674,10 @@ object RhoRuntime {
       invalidBlocks   = InvalidBlocks.unsafe[F]()
       aiProcesses     = if (isOpenAIEnabled) stdRhoAIProcesses[F] else Seq.empty
       ollamaProcesses = if (isOllamaEnabled) stdRhoOllamaProcesses[F] else Seq.empty
-      urnMap = basicProcesses ++ (stdSystemProcesses[F] ++ stdRhoCryptoProcesses[F] ++ aiProcesses ++ ollamaProcesses ++ extraSystemProcesses)
+      nunetProcesses  = if (isNuNetEnabled) stdRhoNuNetProcesses[F] else Seq.empty
+      urnMap = basicProcesses ++ (stdSystemProcesses[F] ++ stdRhoCryptoProcesses[F] ++ aiProcesses ++ ollamaProcesses ++ nunetProcesses ++ extraSystemProcesses)
         .map(_.toUrnMap)
-      procDefs = (stdSystemProcesses[F] ++ stdRhoCryptoProcesses[F] ++ aiProcesses ++ ollamaProcesses ++ extraSystemProcesses)
+      procDefs = (stdSystemProcesses[F] ++ stdRhoCryptoProcesses[F] ++ aiProcesses ++ ollamaProcesses ++ nunetProcesses ++ extraSystemProcesses)
         .map(_.toProcDefs)
     } yield (blockDataRef, invalidBlocks, urnMap, procDefs)
 
@@ -624,7 +687,8 @@ object RhoRuntime {
       mergeableTagName: Par,
       extraSystemProcesses: Seq[Definition[F]] = Seq.empty,
       openAIService: OpenAIService,
-      ollamaService: OllamaService
+      ollamaService: OllamaService,
+      nunetService: NuNetService
   ): F[(Reduce[F], Ref[F, BlockData], InvalidBlocks[F])] =
     for {
       mapsAndRefs                                     <- setupMapsAndRefs(extraSystemProcesses)
@@ -638,7 +702,8 @@ object RhoRuntime {
         mergeChs,
         mergeableTagName,
         openAIService,
-        ollamaService
+        ollamaService,
+        nunetService
       )
       res <- introduceSystemProcesses(rspace :: Nil, procDefs.toList)
       _   = assert(res.forall(_.isEmpty))
@@ -667,7 +732,8 @@ object RhoRuntime {
       initRegistry: Boolean,
       mergeableTagName: Par,
       openAIService: OpenAIService,
-      ollamaService: OllamaService
+      ollamaService: OllamaService,
+      nunetService: NuNetService
   )(implicit costLog: FunctorTell[F, Chain[Cost]]): F[RhoRuntime[F]] =
     Span[F].trace(createPlayRuntime) {
       for {
@@ -681,7 +747,8 @@ object RhoRuntime {
             mergeableTagName,
             extraSystemProcesses,
             openAIService,
-            ollamaService
+            ollamaService,
+            nunetService
           )
         }
         (reducer, blockRef, invalidBlocks) = rhoEnv
@@ -715,7 +782,8 @@ object RhoRuntime {
       initRegistry: Boolean = true,
       extraSystemProcesses: Seq[Definition[F]] = Seq.empty,
       openAIService: OpenAIService,
-      ollamaService: OllamaService
+      ollamaService: OllamaService,
+      nunetService: NuNetService
   )(implicit costLog: FunctorTell[F, Chain[Cost]]): F[RhoRuntime[F]] =
     createRuntime[F](
       rspace,
@@ -723,7 +791,8 @@ object RhoRuntime {
       initRegistry,
       mergeableTagName,
       openAIService,
-      ollamaService
+      ollamaService,
+      nunetService
     )
 
   /**
@@ -740,7 +809,8 @@ object RhoRuntime {
       extraSystemProcesses: Seq[Definition[F]] = Seq.empty,
       initRegistry: Boolean = true,
       openAIService: OpenAIService,
-      ollamaService: OllamaService
+      ollamaService: OllamaService,
+      nunetService: NuNetService
   )(implicit costLog: FunctorTell[F, Chain[Cost]]): F[ReplayRhoRuntime[F]] =
     Span[F].trace(createReplayRuntime) {
       for {
@@ -754,7 +824,8 @@ object RhoRuntime {
             mergeableTagName,
             extraSystemProcesses,
             openAIService,
-            ollamaService
+            ollamaService,
+            nunetService
           )
         }
         (reducer, blockRef, invalidBlocks) = rhoEnv
@@ -779,7 +850,8 @@ object RhoRuntime {
       additionalSystemProcesses: Seq[Definition[F]],
       mergeableTagName: Par,
       openAIService: OpenAIService,
-      ollamaService: OllamaService
+      ollamaService: OllamaService,
+      nunetService: NuNetService
   ): F[(RhoRuntime[F], ReplayRhoRuntime[F])] =
     for {
       rhoRuntime <- RhoRuntime.createRhoRuntime[F](
@@ -788,7 +860,8 @@ object RhoRuntime {
                      initRegistry,
                      additionalSystemProcesses,
                      openAIService,
-                     ollamaService
+                     ollamaService,
+                     nunetService
                    )
       replayRhoRuntime <- RhoRuntime.createReplayRhoRuntime[F](
                            replaySpace,
@@ -796,7 +869,8 @@ object RhoRuntime {
                            additionalSystemProcesses,
                            initRegistry,
                            openAIService,
-                           ollamaService
+                           ollamaService,
+                           nunetService
                          )
     } yield (rhoRuntime, replayRhoRuntime)
 
@@ -810,7 +884,8 @@ object RhoRuntime {
       initRegistry: Boolean = false,
       additionalSystemProcesses: Seq[Definition[F]] = Seq.empty,
       openAIService: OpenAIService,
-      ollamaService: OllamaService
+      ollamaService: OllamaService,
+      nunetService: NuNetService
   )(
       implicit scheduler: Scheduler
   ): F[RhoRuntime[F]] = {
@@ -827,7 +902,8 @@ object RhoRuntime {
                   initRegistry,
                   additionalSystemProcesses,
                   openAIService,
-                  ollamaService
+                  ollamaService,
+                  nunetService
                 )
     } yield runtime
   }

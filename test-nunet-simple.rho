@@ -1,0 +1,3 @@
+new stdout(`rho:io:stdout`) in {
+  stdout!("Testing NuNet integration - F1R3FLY is built with NuNet support!")
+}

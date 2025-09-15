@@ -22,6 +22,7 @@ final case class NodeConf(
     metrics: Metrics,
     openai: Option[OpenAIConf],
     ollama: Option[OllamaConf],
+    nunet: Option[NuNetConf],
     devMode: Boolean,
     dev: DevConf,
     rspacePlusPlus: Boolean,
@@ -111,6 +112,14 @@ final case class OllamaConf(
     enabled: Boolean,
     baseUrl: String,
     defaultModel: String,
+    validateConnection: Boolean,
+    timeoutSec: Int
+)
+
+final case class NuNetConf(
+    enabled: Boolean,
+    dmsUrl: String,
+    actorDid: String,
     validateConnection: Boolean,
     timeoutSec: Int
 )

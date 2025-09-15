@@ -21,6 +21,7 @@ import coop.rchain.rholang.interpreter.merging.RholangMergingLogic.{
   DeployMergeableData
 }
 import coop.rchain.rholang.interpreter.{
+  NuNetServiceImpl,
   OllamaServiceImpl,
   OpenAIServiceImpl,
   ReplayRhoRuntime,
@@ -99,7 +100,8 @@ final case class RuntimeManagerImpl[F[_]: Concurrent: Metrics: Span: Log: Contex
                   true,
                   Seq.empty,
                   OpenAIServiceImpl.realOpenAIService,
-                  OllamaServiceImpl.instance
+                  OllamaServiceImpl.instance,
+                  NuNetServiceImpl.instance
                 )
     } yield runtime
 
@@ -120,7 +122,8 @@ final case class RuntimeManagerImpl[F[_]: Concurrent: Metrics: Span: Log: Contex
                   Seq.empty,
                   true,
                   OpenAIServiceImpl.realOpenAIService,
-                  OllamaServiceImpl.instance
+                  OllamaServiceImpl.instance,
+                  NuNetServiceImpl.instance
                 )
     } yield runtime
 

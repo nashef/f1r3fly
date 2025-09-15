@@ -107,7 +107,8 @@ object Resources {
                        .stdRhoOllamaProcesses[F],
                      Par(),
                      OpenAIServiceMock.echoService,
-                     OllamaServiceMock.echoService
+                     OllamaServiceMock.echoService,
+                     NuNetServiceMock.echoService
                    )
       (runtime, replayRuntime) = runtimes
     } yield (runtime, replayRuntime, space.historyRepo)

@@ -1,0 +1,41 @@
+version: "1.0"
+ensemble:
+  name: "hello-world-test"
+  version: "1.0"
+  description: "Simple hello world container test"
+
+services:
+  hello:
+    image: "hello-world:latest"
+    entrypoint: ["/hello"]
+    resources:
+      cpu:
+        cores: 0.1
+      ram:
+        size: "64Mi"
+      disk:
+        size: "1Gi"
+    networking:
+      ports: []
+    volumes: []
+
+allocations:
+  hello:
+    type: "service"
+    services:
+      - hello
+    resources:
+      cpu:
+        cores: 0.1
+      ram:
+        size: "64Mi"
+      disk:
+        size: "1Gi"
+    execution:
+      type: "docker"
+      image: "hello-world:latest"
+      engine_spec:
+        type: "docker"
+    executor: "docker"
+    time:
+      duration: "2h"

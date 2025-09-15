@@ -1,0 +1,6 @@
+new nunetNodes(`rho:nunet:nodes`), result, stdout(`rho:io:stdout`) in {
+  nunetNodes!(*result) |
+  for(@nodes <- result) {
+    stdout!(["Available NuNet nodes:", nodes])
+  }
+}

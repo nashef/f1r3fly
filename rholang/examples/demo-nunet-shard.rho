@@ -1,0 +1,199 @@
+new bootstrapResult, validator1Result, validator2Result, validator3Result,
+    statusResult, nodesResult,
+    nunetDeploy(`rho:nunet:deploy`),
+    nunetStatus(`rho:nunet:status`),
+    nunetNodes(`rho:nunet:nodes`),
+    stdout(`rho:io:stdout`) in {
+
+  stdout!(["=== NuNet Demo: Deploying Complete F1R3FLY Shard ==="]) |
+
+  // First, check available nodes
+  nunetNodes!(*nodesResult) |
+  for(@nodes <- nodesResult) {
+    stdout!(["Available compute nodes for shard deployment:", nodes]) |
+
+    // Step 1: Deploy Bootstrap Node
+    stdout!(["🚀 Step 1: Deploying Bootstrap Node"]) |
+    nunetDeploy!("{
+      \"image\": \"f1r3fly/rnode:latest\",
+      \"command\": [
+        \"./rnode\", \"run\",
+        \"--standalone\",
+        \"--host\", \"0.0.0.0\",
+        \"--port\", \"40400\",
+        \"--grpc-port\", \"50505\",
+        \"--http-port\", \"9095\"
+      ],
+      \"resources\": {
+        \"cpu\": \"4\",
+        \"memory\": \"8Gi\",
+        \"storage\": \"20Gi\"
+      },
+      \"network\": {
+        \"ports\": [40400, 50505, 9095]
+      },
+      \"environment\": {
+        \"RNODE_ROLE\": \"bootstrap\",
+        \"JAVA_OPTS\": \"-Xmx6g\"
+      }
+    }", *bootstrapResult) |
+
+    for(@bootstrapJobId <- bootstrapResult) {
+      stdout!(["✅ Bootstrap node deployed with job ID:", bootstrapJobId]) |
+
+      // Step 2: Deploy Validator Node 1
+      stdout!(["🔗 Step 2: Deploying Validator Node 1"]) |
+      nunetDeploy!("{
+        \"image\": \"f1r3fly/rnode:latest\",
+        \"command\": [
+          \"./rnode\", \"run\",
+          \"--validator-private-key\", \"/keys/validator1.pem\",
+          \"--host\", \"0.0.0.0\",
+          \"--port\", \"40401\",
+          \"--grpc-port\", \"50506\"
+        ],
+        \"resources\": {
+          \"cpu\": \"3\",
+          \"memory\": \"6Gi\",
+          \"storage\": \"15Gi\"
+        },
+        \"network\": {
+          \"ports\": [40401, 50506]
+        },
+        \"environment\": {
+          \"RNODE_ROLE\": \"validator\",
+          \"VALIDATOR_ID\": \"1\",
+          \"JAVA_OPTS\": \"-Xmx4g\"
+        }
+      }", *validator1Result) |
+
+      for(@validator1JobId <- validator1Result) {
+        stdout!(["✅ Validator 1 deployed with job ID:", validator1JobId]) |
+
+        // Step 3: Deploy Validator Node 2
+        stdout!(["🔗 Step 3: Deploying Validator Node 2"]) |
+        nunetDeploy!("{
+          \"image\": \"f1r3fly/rnode:latest\",
+          \"command\": [
+            \"./rnode\", \"run\",
+            \"--validator-private-key\", \"/keys/validator2.pem\",
+            \"--host\", \"0.0.0.0\",
+            \"--port\", \"40402\",
+            \"--grpc-port\", \"50507\"
+          ],
+          \"resources\": {
+            \"cpu\": \"3\",
+            \"memory\": \"6Gi\",
+            \"storage\": \"15Gi\"
+          },
+          \"network\": {
+            \"ports\": [40402, 50507]
+          },
+          \"environment\": {
+            \"RNODE_ROLE\": \"validator\",
+            \"VALIDATOR_ID\": \"2\",
+            \"JAVA_OPTS\": \"-Xmx4g\"
+          }
+        }", *validator2Result) |
+
+        for(@validator2JobId <- validator2Result) {
+          stdout!(["✅ Validator 2 deployed with job ID:", validator2JobId]) |
+
+          // Step 4: Deploy Validator Node 3
+          stdout!(["🔗 Step 4: Deploying Validator Node 3"]) |
+          nunetDeploy!("{
+            \"image\": \"f1r3fly/rnode:latest\",
+            \"command\": [
+              \"./rnode\", \"run\",
+              \"--validator-private-key\", \"/keys/validator3.pem\",
+              \"--host\", \"0.0.0.0\",
+              \"--port\", \"40403\",
+              \"--grpc-port\", \"50508\"
+            ],
+            \"resources\": {
+              \"cpu\": \"3\",
+              \"memory\": \"6Gi\",
+              \"storage\": \"15Gi\"
+            },
+            \"network\": {
+              \"ports\": [40403, 50508]
+            },
+            \"environment\": {
+              \"RNODE_ROLE\": \"validator\",
+              \"VALIDATOR_ID\": \"3\",
+              \"JAVA_OPTS\": \"-Xmx4g\"
+            }
+          }", *validator3Result) |
+
+          for(@validator3JobId <- validator3Result) {
+            stdout!(["✅ Validator 3 deployed with job ID:", validator3JobId]) |
+
+            // Step 5: Monitor all deployments
+            stdout!(["📊 Step 5: Monitoring Shard Deployment Status"]) |
+
+            contract monitorShard(@bootstrap, @val1, @val2, @val3, @round) = {
+              if (round < 15) {
+                stdout!(["--- Monitoring Round #" ++ round.toByteArray() ++ " ---"]) |
+
+                // Check bootstrap status
+                nunetStatus!(bootstrap, *statusResult) |
+                for(@bootstrapStatus <- statusResult) {
+                  stdout!(["Bootstrap status:", bootstrapStatus]) |
+
+                  // Check validator 1 status
+                  nunetStatus!(val1, *statusResult) |
+                  for(@val1Status <- statusResult) {
+                    stdout!(["Validator 1 status:", val1Status]) |
+
+                    // Check validator 2 status
+                    nunetStatus!(val2, *statusResult) |
+                    for(@val2Status <- statusResult) {
+                      stdout!(["Validator 2 status:", val2Status]) |
+
+                      // Check validator 3 status
+                      nunetStatus!(val3, *statusResult) |
+                      for(@val3Status <- statusResult) {
+                        stdout!(["Validator 3 status:", val3Status]) |
+
+                        // Check if all nodes are completed
+                        match (bootstrapStatus, val1Status, val2Status, val3Status) {
+                          ("completed", "completed", "completed", "completed") => {
+                            stdout!(["🎉 SHARD DEPLOYMENT COMPLETED SUCCESSFULLY! 🎉"]) |
+                            stdout!(["All F1R3FLY nodes are now running on NuNet DMS."]) |
+                            stdout!(["Bootstrap Node Job ID:", bootstrap]) |
+                            stdout!(["Validator 1 Job ID:", val1]) |
+                            stdout!(["Validator 2 Job ID:", val2]) |
+                            stdout!(["Validator 3 Job ID:", val3]) |
+                            stdout!(["The F1R3FLY shard is ready for use!"])
+                          }
+                          _ => {
+                            // Check if any failed
+                            if (bootstrapStatus == "failed" or val1Status == "failed" or
+                                val2Status == "failed" or val3Status == "failed") {
+                              stdout!(["❌ SHARD DEPLOYMENT FAILED"]) |
+                              stdout!(["One or more nodes failed to deploy. Check DMS logs."])
+                            } else {
+                              stdout!(["⏳ Shard deployment in progress..."]) |
+                              // Continue monitoring
+                              monitorShard!(bootstrap, val1, val2, val3, round + 1)
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              } else {
+                stdout!(["⚠️  Monitoring limit reached. Shard may still be deploying."]) |
+                stdout!(["Please check job statuses manually using the job IDs above."])
+              }
+            } |
+
+            // Start monitoring
+            monitorShard!(bootstrapJobId, validator1JobId, validator2JobId, validator3JobId, 1)
+          }
+        }
+      }
+    }
+  }
+}

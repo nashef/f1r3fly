@@ -1,0 +1,43 @@
+new deployResult, statusResult,
+    nunetDeployRNode(`rho:nunet:deploy-rnode`),
+    nunetStatus(`rho:nunet:status`),
+    stdout(`rho:io:stdout`) in {
+
+  stdout!(["=== NuNet Demo: Deploying RNode Instance ==="]) |
+
+  // Deploy RNode with default configuration
+  nunetDeployRNode!(*deployResult) |
+  for(@jobId <- deployResult) {
+    stdout!(["RNode deployment initiated with job ID:", jobId]) |
+
+    // Monitor deployment status
+    contract checkStatus(@id, @count) = {
+      if (count < 10) {
+        nunetStatus!(id, *statusResult) |
+        for(@status <- statusResult) {
+          stdout!(["RNode deployment status (check #" ++ count.toByteArray() ++ "):", status]) |
+          match status {
+            "completed" => {
+              stdout!(["✅ RNode deployment completed successfully!"]) |
+              stdout!(["The RNode is now running on the NuNet DMS."]) |
+              stdout!(["You can connect to it using the DMS networking capabilities."])
+            }
+            "failed" => {
+              stdout!(["❌ RNode deployment failed. Check DMS logs for details."])
+            }
+            _ => {
+              stdout!(["⏳ RNode deployment in progress..."]) |
+              // In a real implementation, you'd add a delay here
+              checkStatus!(id, count + 1)
+            }
+          }
+        }
+      } else {
+        stdout!(["⚠️  Status check limit reached. Please check manually."])
+      }
+    } |
+
+    // Start status monitoring
+    checkStatus!(jobId, 1)
+  }
+}

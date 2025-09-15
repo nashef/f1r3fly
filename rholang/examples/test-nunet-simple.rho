@@ -1,0 +1,25 @@
+new deployResult, nodesResult,
+    nunetDeploy(`rho:nunet:deploy`),
+    nunetNodes(`rho:nunet:nodes`),
+    stdout(`rho:io:stdout`) in {
+
+  stdout!(["=== Simple NuNet Test ==="]) |
+
+  // Test 1: List nodes (should work if DMS is running)
+  nunetNodes!(*nodesResult) |
+  for(@nodes <- nodesResult) {
+    stdout!(["✅ Nodes call successful. Available nodes:", nodes]) |
+
+    // Test 2: Deploy a simple echo job
+    nunetDeploy!("{
+      \"image\": \"busybox:latest\",
+      \"command\": [\"echo\", \"NuNet integration test successful!\"],
+      \"resources\": {\"cpu\": \"0.5\", \"memory\": \"512Mi\"}
+    }", *deployResult) |
+
+    for(@jobId <- deployResult) {
+      stdout!(["✅ Deploy call successful. Job ID:", jobId]) |
+      stdout!(["✅ NuNet integration is working correctly!"])
+    }
+  }
+}

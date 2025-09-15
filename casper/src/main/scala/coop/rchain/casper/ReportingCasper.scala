@@ -28,6 +28,7 @@ import coop.rchain.rholang.interpreter.RhoRuntime.{bootstrapRegistry, createRhoE
 import coop.rchain.rholang.interpreter.SystemProcesses.{BlockData, Definition, InvalidBlocks}
 import coop.rchain.rholang.interpreter.accounting.{_cost, CostAccounting}
 import coop.rchain.rholang.interpreter.{
+  NuNetServiceImpl,
   OllamaServiceImpl,
   OpenAIServiceImpl,
   Reduce,
@@ -217,7 +218,8 @@ object ReportingRuntime {
           Genesis.NonNegativeMergeableTagName,
           extraSystemProcesses,
           OpenAIServiceImpl.realOpenAIService,
-          OllamaServiceImpl.instance
+          OllamaServiceImpl.instance,
+          NuNetServiceImpl.instance
         )
       }
       (reducer, blockRef, invalidBlocks) = rhoEnv

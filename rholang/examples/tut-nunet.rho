@@ -1,0 +1,65 @@
+new deployResult, statusResult, nodesResult,
+    nunetDeploy(`rho:nunet:deploy`),
+    nunetStatus(`rho:nunet:status`),
+    nunetNodes(`rho:nunet:nodes`),
+    stdout(`rho:io:stdout`) in {
+
+  // Test 1: List available compute nodes
+  stdout!(["=== NuNet Tutorial: Listing Available Nodes ==="]) |
+  nunetNodes!(*nodesResult) |
+  for(@nodes <- nodesResult) {
+    stdout!(["Available compute nodes:", nodes])
+  } |
+
+  // Test 2: Deploy a simple compute job
+  stdout!(["=== NuNet Tutorial: Deploying Simple Job ==="]) |
+  nunetDeploy!("{
+    \"image\": \"ubuntu:latest\",
+    \"command\": [\"echo\", \"Hello from NuNet compute!\"],
+    \"resources\": {
+      \"cpu\": \"1\",
+      \"memory\": \"1Gi\",
+      \"storage\": \"1Gi\"
+    }
+  }", *deployResult) |
+
+  for(@jobId <- deployResult) {
+    stdout!(["Simple job deployed with ID:", jobId]) |
+
+    // Test 3: Check job status
+    stdout!(["=== NuNet Tutorial: Checking Job Status ==="]) |
+    nunetStatus!(jobId, *statusResult) |
+    for(@status <- statusResult) {
+      stdout!(["Job status:", status])
+    }
+  } |
+
+  // Test 4: Deploy a more complex job with networking
+  stdout!(["=== NuNet Tutorial: Deploying Complex Job ==="]) |
+  nunetDeploy!("{
+    \"image\": \"nginx:latest\",
+    \"command\": [\"nginx\", \"-g\", \"daemon off;\"],
+    \"resources\": {
+      \"cpu\": \"2\",
+      \"memory\": \"2Gi\",
+      \"storage\": \"5Gi\"
+    },
+    \"network\": {
+      \"ports\": [80, 443]
+    },
+    \"environment\": {
+      \"NGINX_HOST\": \"localhost\",
+      \"NGINX_PORT\": \"80\"
+    }
+  }", *deployResult) |
+
+  for(@complexJobId <- deployResult) {
+    stdout!(["Complex job (nginx) deployed with ID:", complexJobId]) |
+
+    // Check complex job status
+    nunetStatus!(complexJobId, *statusResult) |
+    for(@complexStatus <- statusResult) {
+      stdout!(["Complex job status:", complexStatus])
+    }
+  }
+}

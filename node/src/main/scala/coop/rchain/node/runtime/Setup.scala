@@ -42,7 +42,12 @@ import coop.rchain.node.state.instances.RNodeStateManagerImpl
 import coop.rchain.node.web.ReportingRoutes.ReportingHttpRoutes
 import coop.rchain.node.web.{ReportingRoutes, Transaction}
 import coop.rchain.p2p.effects.PacketHandler
-import coop.rchain.rholang.interpreter.{OllamaServiceImpl, OpenAIServiceImpl, RhoRuntime}
+import coop.rchain.rholang.interpreter.{
+  NuNetServiceImpl,
+  OllamaServiceImpl,
+  OpenAIServiceImpl,
+  RhoRuntime
+}
 import coop.rchain.rspace.state.instances.RSpaceStateManagerImpl
 import coop.rchain.rspace.syntax._
 import coop.rchain.shared._
@@ -160,7 +165,8 @@ object Setup {
               false,
               Seq.empty,
               OpenAIServiceImpl.realOpenAIService,
-              OllamaServiceImpl.instance
+              OllamaServiceImpl.instance,
+              NuNetServiceImpl.instance
             )
         )
       }

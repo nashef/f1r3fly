@@ -1,0 +1,81 @@
+{
+  "apm": {
+    "api_key": "",
+    "environment": "production",
+    "secret_token": "",
+    "server_url": "http://apm.telemetry.nunet.io",
+    "service_name": "nunet-dms"
+  },
+  "general": {
+    "data_dir": "/Users/leaf/nunet/data",
+    "debug": false,
+    "env": "test",
+    "host_city": "",
+    "host_continent": "",
+    "host_country": "",
+    "payment_provider": {
+      "ethereum_rpc_token": "",
+      "ethereum_rpc_url": "",
+      "mode": false
+    },
+    "port_available_range_from": 16384,
+    "port_available_range_to": 65536,
+    "storage_bricks_dir": "/Users/leaf/.nunet/storage_bricks_dir",
+    "storage_ca_directory": "/Users/leaf/.nunet/storage_ca_directory",
+    "storage_glusterfs_hostname": "",
+    "storage_mode": false,
+    "user_dir": "/Users/leaf/.nunet",
+    "work_dir": "/Users/leaf/nunet"
+  },
+  "job": {
+    "allow_privileged_docker": false
+  },
+  "observability": {
+    "elastic": {
+      "api_key": "",
+      "enabled": false,
+      "flush_interval": 5,
+      "index": "nunet-dms",
+      "insecure_skip_verify": true,
+      "url": "http://localhost:9200"
+    },
+    "elasticsearch_api_key": "",
+    "elasticsearch_enabled": false,
+    "elasticsearch_index": "",
+    "elasticsearch_url": "",
+    "flush_interval": 0,
+    "insecure_skip_verify": false,
+    "log_file": "",
+    "log_level": "",
+    "logging": {
+      "file": "/Users/leaf/nunet/logs/nunet-dms.log",
+      "level": "INFO",
+      "rotation": {
+        "max_age_days": 28,
+        "max_backups": 3,
+        "max_size_mb": 100
+      }
+    },
+    "max_age": 0,
+    "max_backups": 0,
+    "max_size": 0
+  },
+  "p2p": {
+    "bootstrap_peers": "[]",
+    "fd": 512,
+    "listen_address": [
+      "/ip4/0.0.0.0/tcp/9000",
+      "/ip4/0.0.0.0/udp/9000/quic-v1"
+    ],
+    "memory": 1024
+  },
+  "profiler": {
+    "addr": "127.0.0.1",
+    "enabled": true,
+    "port": 6060
+  },
+  "rest": {
+    "addr": "127.0.0.1",
+    "port": 9999
+  }
+}

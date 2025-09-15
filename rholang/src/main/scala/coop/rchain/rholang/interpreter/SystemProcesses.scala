@@ -61,6 +61,10 @@ trait SystemProcesses[F[_]] {
   def ollamaChat: Contract[F]
   def ollamaGenerate: Contract[F]
   def ollamaModels: Contract[F]
+  def nunetDeploy: Contract[F]
+  def nunetStatus: Contract[F]
+  def nunetNodes: Contract[F]
+  def nunetDeployRNode: Contract[F]
   def grpcTell: Contract[F]
   def devNull: Contract[F]
 }
@@ -121,6 +125,10 @@ object SystemProcesses {
     val OLLAMA_CHAT: Par        = byteName(23)
     val OLLAMA_GENERATE: Par    = byteName(24)
     val OLLAMA_MODELS: Par      = byteName(25)
+    val NUNET_DEPLOY: Par       = byteName(28)
+    val NUNET_STATUS: Par       = byteName(29)
+    val NUNET_NODES: Par        = byteName(30)
+    val NUNET_DEPLOY_RNODE: Par = byteName(31)
     val GRPC_TELL: Par          = byteName(26)
     val DEV_NULL: Par           = byteName(27)
   }
@@ -146,6 +154,10 @@ object SystemProcesses {
     val OLLAMA_CHAT: Long        = 21L
     val OLLAMA_GENERATE: Long    = 22L
     val OLLAMA_MODELS: Long      = 23L
+    val NUNET_DEPLOY: Long       = 26L
+    val NUNET_STATUS: Long       = 27L
+    val NUNET_NODES: Long        = 28L
+    val NUNET_DEPLOY_RNODE: Long = 29L
     val GRPC_TELL: Long          = 24L
     val DEV_NULL: Long           = 25L
   }
@@ -156,7 +168,11 @@ object SystemProcesses {
     BodyRefs.TEXT_TO_AUDIO,
     BodyRefs.OLLAMA_CHAT,
     BodyRefs.OLLAMA_GENERATE,
-    BodyRefs.OLLAMA_MODELS
+    BodyRefs.OLLAMA_MODELS,
+    BodyRefs.NUNET_DEPLOY,
+    BodyRefs.NUNET_STATUS,
+    BodyRefs.NUNET_NODES,
+    BodyRefs.NUNET_DEPLOY_RNODE
   )
 
   final case class ProcessContext[F[_]: Concurrent: Span](
@@ -165,9 +181,11 @@ object SystemProcesses {
       blockData: Ref[F, BlockData],
       invalidBlocks: InvalidBlocks[F],
       openAIService: OpenAIService,
-      ollamaService: OllamaService
+      ollamaService: OllamaService,
+      nunetService: NuNetService
   ) {
-    val systemProcesses = SystemProcesses[F](dispatcher, space, openAIService, ollamaService)
+    val systemProcesses =
+      SystemProcesses[F](dispatcher, space, openAIService, ollamaService, nunetService)
   }
   final case class Definition[F[_]](
       urn: String,
@@ -206,7 +224,8 @@ object SystemProcesses {
       dispatcher: Dispatch[F, ListParWithRandom, TaggedContinuation],
       space: RhoTuplespace[F],
       openAIService: OpenAIService,
-      ollamaService: OllamaService
+      ollamaService: OllamaService,
+      nunetService: NuNetService
   )(implicit F: Concurrent[F], spanF: Span[F]): SystemProcesses[F] =
     new SystemProcesses[F] {
 
@@ -563,6 +582,87 @@ object SystemProcesses {
             modelPars = models.map(model => Par(exprs = Seq(Expr(GString(model)))))
             output    = Seq(Par(exprs = Seq(EList(modelPars))))
             _         <- produce(output, ack)
+          } yield output).onError {
+            case e =>
+              produce(Seq(RhoType.String(s"Error: ${e.getMessage}")), ack)
+              e.raiseError
+          }
+        }
+      }
+
+      def nunetDeploy: Contract[F] = {
+        case isContractCall(produce, true, previousOutput, Seq(_, ack)) => {
+          produce(previousOutput, ack).map(_ => previousOutput)
+        }
+        case isContractCall(produce, _, _, Seq(RhoType.String(jobSpec), ack)) => {
+          (for {
+            jobId  <- nunetService.deployJob(jobSpec)
+            output = Seq(RhoType.String(jobId))
+            _      <- produce(output, ack)
+          } yield output).onError {
+            case e =>
+              produce(Seq(RhoType.String(s"Error: ${e.getMessage}")), ack)
+              e.raiseError
+          }
+        }
+      }
+
+      def nunetStatus: Contract[F] = {
+        case isContractCall(produce, true, previousOutput, Seq(_, ack)) => {
+          produce(previousOutput, ack).map(_ => previousOutput)
+        }
+        case isContractCall(produce, _, _, Seq(RhoType.String(jobId), ack)) => {
+          (for {
+            status <- nunetService.getJobStatus(jobId)
+            output = Seq(RhoType.String(status))
+            _      <- produce(output, ack)
+          } yield output).onError {
+            case e =>
+              produce(Seq(RhoType.String(s"Error: ${e.getMessage}")), ack)
+              e.raiseError
+          }
+        }
+      }
+
+      def nunetNodes: Contract[F] = {
+        case isContractCall(produce, true, previousOutput, Seq(ack)) => {
+          produce(previousOutput, ack).map(_ => previousOutput)
+        }
+        case isContractCall(produce, _, _, Seq(ack)) => {
+          (for {
+            nodes    <- nunetService.listAvailableNodes()
+            nodePars = nodes.map(node => Par(exprs = Seq(Expr(GString(node)))))
+            output   = Seq(Par(exprs = Seq(EList(nodePars))))
+            _        <- produce(output, ack)
+          } yield output).onError {
+            case e =>
+              produce(Seq(RhoType.String(s"Error: ${e.getMessage}")), ack)
+              e.raiseError
+          }
+        }
+      }
+
+      def nunetDeployRNode: Contract[F] = {
+        case isContractCall(produce, true, previousOutput, Seq(_, ack)) => {
+          produce(previousOutput, ack).map(_ => previousOutput)
+        }
+        case isContractCall(produce, _, _, Seq(RhoType.String(config), ack)) => {
+          (for {
+            jobId  <- nunetService.deployRNode(config)
+            output = Seq(RhoType.String(jobId))
+            _      <- produce(output, ack)
+          } yield output).onError {
+            case e =>
+              produce(Seq(RhoType.String(s"Error: ${e.getMessage}")), ack)
+              e.raiseError
+          }
+        }
+        case isContractCall(produce, _, _, Seq(ack)) => {
+          // Deploy RNode with default configuration
+          (for {
+            jobId  <- nunetService.deployRNode("")
+            output = Seq(RhoType.String(jobId))
+            _      <- produce(output, ack)
           } yield output).onError {
             case e =>
               produce(Seq(RhoType.String(s"Error: ${e.getMessage}")), ack)
