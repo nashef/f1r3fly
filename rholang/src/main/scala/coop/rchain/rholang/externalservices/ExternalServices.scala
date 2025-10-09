@@ -4,24 +4,28 @@ trait ExternalServices {
   def openAIService: OpenAIService
   def grpcClient: GrpcClientService
   def ollamaService: OllamaService
+  def nunetService: NunetService
 }
 
 case object RealExternalServices extends ExternalServices {
   override val openAIService: OpenAIService  = OpenAIServiceImpl.instance
   override val grpcClient: GrpcClientService = GrpcClientService.instance
   override val ollamaService: OllamaService  = OllamaServiceImpl.instance
+  override val nunetService: NunetService    = NunetServiceImpl.instance
 }
 
 case object NoOpExternalServices extends ExternalServices {
   override val openAIService: OpenAIService  = OpenAIServiceImpl.noOpInstance
   override val grpcClient: GrpcClientService = GrpcClientService.noOpInstance
   override val ollamaService: OllamaService  = new DisabledOllamaService
+  override val nunetService: NunetService    = new DisabledNunetService
 }
 
 case object ObserverExternalServices extends ExternalServices {
   override val openAIService: OpenAIService  = OpenAIServiceImpl.noOpInstance
   override val grpcClient: GrpcClientService = GrpcClientService.noOpInstance
   override val ollamaService: OllamaService  = new DisabledOllamaService
+  override val nunetService: NunetService    = new DisabledNunetService
 }
 
 object ExternalServices {
