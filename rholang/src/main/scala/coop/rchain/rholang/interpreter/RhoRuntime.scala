@@ -677,9 +677,13 @@ object RhoRuntime {
       blockDataRef  <- Ref.of(BlockData.empty)
       invalidBlocks = InvalidBlocks.unsafe[F]()
       deployData    <- Ref.of(DeployData.empty)
-      urnMap = basicProcesses ++ (stdSystemProcesses[F] ++ stdRhoCryptoProcesses[F] ++ stdRhoAIProcesses ++ stdRhoOllamaProcesses ++ stdRhoNunetProcesses ++ extraSystemProcesses)
+      urnMap = basicProcesses ++ (stdSystemProcesses[F] ++ stdRhoCryptoProcesses[F] ++ stdRhoAIProcesses[
+        F
+      ] ++ stdRhoOllamaProcesses[F] ++ stdRhoNunetProcesses[F] ++ extraSystemProcesses)
         .map(_.toUrnMap)
-      procDefs = (stdSystemProcesses[F] ++ stdRhoCryptoProcesses[F] ++ stdRhoAIProcesses ++ stdRhoOllamaProcesses ++ stdRhoNunetProcesses ++ extraSystemProcesses)
+      procDefs = (stdSystemProcesses[F] ++ stdRhoCryptoProcesses[F] ++ stdRhoAIProcesses[F] ++ stdRhoOllamaProcesses[
+        F
+      ] ++ stdRhoNunetProcesses[F] ++ extraSystemProcesses)
         .map(_.toProcDefs)
     } yield (blockDataRef, invalidBlocks, deployData, urnMap, procDefs)
 

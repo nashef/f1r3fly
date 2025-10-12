@@ -22,6 +22,7 @@ final case class NodeConf(
     metrics: Metrics,
     openai: Option[OpenAIConf],
     ollama: Option[OllamaConf],
+    nunet: Option[NunetConf],
     devMode: Boolean,
     dev: DevConf,
     rspacePlusPlus: Boolean,
@@ -113,6 +114,13 @@ final case class OllamaConf(
     defaultModel: String,
     validateConnection: Boolean,
     timeoutSec: Int
+)
+
+final case class NunetConf(
+    enabled: Boolean,
+    cliPath: String,
+    context: String,
+    timeout: Int
 )
 
 sealed trait Command
