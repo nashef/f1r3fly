@@ -235,25 +235,14 @@ class DisabledNunetService extends NunetService {
 /**
   * Real implementation - executes nunet CLI commands using actor behavior model.
   */
-class NunetServiceImpl(implicit ec: ExecutionContext) extends NunetService {
+class NunetServiceImpl(config: NunetConf)(implicit ec: ExecutionContext) extends NunetService {
   import NunetServiceImpl._
 
-  private val config = ConfigFactory.load()
-  private val cliPath = if (config.hasPath("nunet.cli-path")) {
-    config.getString("nunet.cli-path")
-  } else {
-    "nunet"
-  }
-  private val context = if (config.hasPath("nunet.context")) {
-    config.getString("nunet.context")
-  } else {
-    "user"
-  }
-  private val timeout = if (config.hasPath("nunet.timeout")) {
-    config.getInt("nunet.timeout")
-  } else {
-    600
-  }
+  // Use configuration provided via constructor
+  private val cliPath    = config.cliPath
+  private val context    = config.context
+  private val timeout    = config.timeout
+  private val passphrase = config.passphrase
 
   def deployEnsemble[F[_]](ensembleYaml: String, timeoutMinutes: Int)(
       implicit
@@ -286,7 +275,7 @@ class NunetServiceImpl(implicit ec: ExecutionContext) extends NunetService {
             s"${timeoutMinutes}m"
           )
 
-          val output     = executeCommand(cmd, timeout)
+          val output     = executeCommand(cmd, timeout, passphrase)
           val ensembleId = parseEnsembleId(output)
 
           cb(Right(ensembleId))
@@ -318,7 +307,7 @@ class NunetServiceImpl(implicit ec: ExecutionContext) extends NunetService {
           ensembleId
         )
 
-        val output = executeCommand(cmd, timeout)
+        val output = executeCommand(cmd, timeout, passphrase)
         val status = parseDeploymentStatus(output)
 
         cb(Right(status))
@@ -340,7 +329,7 @@ class NunetServiceImpl(implicit ec: ExecutionContext) extends NunetService {
           "/dms/node/deployment/list"
         )
 
-        val output      = executeCommand(cmd, timeout)
+        val output      = executeCommand(cmd, timeout, passphrase)
         val deployments = parseDeploymentList(output)
 
         cb(Right(deployments))
@@ -366,7 +355,7 @@ class NunetServiceImpl(implicit ec: ExecutionContext) extends NunetService {
           ensembleId
         )
 
-        val output = executeCommand(cmd, timeout)
+        val output = executeCommand(cmd, timeout, passphrase)
 
         cb(Right(output))
       }.recover {
@@ -394,7 +383,7 @@ class NunetServiceImpl(implicit ec: ExecutionContext) extends NunetService {
           ensembleId
         )
 
-        val output   = executeCommand(cmd, timeout)
+        val output   = executeCommand(cmd, timeout, passphrase)
         val manifest = parseDeploymentManifest(output)
 
         cb(Right(manifest))
@@ -478,7 +467,7 @@ class NunetServiceImpl(implicit ec: ExecutionContext) extends NunetService {
       "/dms/node/peers/self"
     )
 
-    executeCommand(cmd, timeout).trim
+    executeCommand(cmd, timeout, passphrase).trim
   }
 }
 
@@ -489,17 +478,43 @@ object NunetServiceImpl {
 
   /**
     * Singleton instance with enable/disable logic.
+    *
+    * @deprecated Use new NunetServiceImpl(nunetConf) with configuration injection instead
     */
+  @deprecated("Use new NunetServiceImpl(nunetConf) instead", "1.0.0")
   lazy val instance: NunetService = {
     import scala.concurrent.ExecutionContext.Implicits.global
-    if (isNunetEnabled) new NunetServiceImpl
-    else new DisabledNunetService
+    if (isNunetEnabled) {
+      // Fallback to loading config directly (old behavior)
+      val config = ConfigFactory.load()
+      val cliPath =
+        if (config.hasPath("nunet.cli-path")) config.getString("nunet.cli-path") else "nunet"
+      val context =
+        if (config.hasPath("nunet.context")) config.getString("nunet.context") else "user"
+      val timeout = if (config.hasPath("nunet.timeout")) config.getInt("nunet.timeout") else 600
+      val passphrase =
+        if (config.hasPath("nunet.passphrase")) config.getString("nunet.passphrase") else ""
+
+      val nunetConf = NunetConf(
+        enabled = true,
+        cliPath = cliPath,
+        context = context,
+        timeout = timeout,
+        passphrase = passphrase
+      )
+
+      new NunetServiceImpl(nunetConf)
+    } else new DisabledNunetService
   }
 
   /**
-    * Execute shell command with timeout.
+    * Execute shell command with timeout and environment variables.
+    *
+    * @param cmd Command and arguments to execute
+    * @param timeoutSeconds Timeout in seconds
+    * @param passphrase DMS passphrase to set in DMS_PASSPHRASE environment variable
     */
-  private def executeCommand(cmd: Seq[String], timeoutSeconds: Int): String = {
+  private def executeCommand(cmd: Seq[String], timeoutSeconds: Int, passphrase: String): String = {
     val stdout = new StringBuilder
     val stderr = new StringBuilder
 
@@ -508,7 +523,9 @@ object NunetServiceImpl {
       line => stderr.append(line + "\n")
     )
 
-    val exitCode = cmd.!(logger)
+    // Create process with DMS_PASSPHRASE environment variable
+    val processBuilder = Process(cmd, None, "DMS_PASSPHRASE" -> passphrase)
+    val exitCode       = processBuilder.!(logger)
 
     if (exitCode == 0) {
       stdout.toString.trim
@@ -534,10 +551,22 @@ object NunetServiceImpl {
 
   /**
     * Parse deployment status from JSON.
+    *
+    * Expected format (simplified, actual format may vary):
+    * {
+    *   "ensemble_id": "...",
+    *   "status": "Running",
+    *   "allocations": [
+    *     { "name": "bootstrap", "status": "Running", "peer_id": "..." },
+    *     ...
+    *   ]
+    * }
     */
   private def parseDeploymentStatus(json: String): DeploymentStatus = {
     val ensembleIdPattern = """"ensemble_id"\s*:\s*"([^"]+)"""".r
     val statusPattern     = """"status"\s*:\s*"([^"]+)"""".r
+    val allocationPattern =
+      """"name"\s*:\s*"([^"]+)"[^}]*"status"\s*:\s*"([^"]+)"[^}]*(?:"peer_id"\s*:\s*"([^"]+)")?""".r
 
     val ensembleId = ensembleIdPattern
       .findFirstMatchIn(json)
@@ -549,29 +578,116 @@ object NunetServiceImpl {
       .map(_.group(1))
       .getOrElse("unknown")
 
-    DeploymentStatus(ensembleId, status, List.empty)
+    val allocations = allocationPattern
+      .findAllMatchIn(json)
+      .map { m =>
+        val name        = m.group(1)
+        val allocStatus = m.group(2)
+        val peerId      = Option(m.group(3))
+        AllocationStatus(name, allocStatus, peerId)
+      }
+      .toList
+
+    DeploymentStatus(ensembleId, status, allocations)
   }
 
   /**
     * Parse deployment list from JSON.
+    *
+    * Expected format:
+    * {
+    *   "Deployments": {
+    *     "ensemble_id_1": "Status1",
+    *     "ensemble_id_2": "Status2",
+    *     ...
+    *   }
+    * }
     */
-  private def parseDeploymentList(json: String): List[DeploymentSummary] =
-    // Simple parsing - in production would use proper JSON library
-    // For now, return empty list as placeholder
-    List.empty
+  private def parseDeploymentList(json: String): List[DeploymentSummary] = {
+    // Pattern to match ensemble ID and status pairs within the Deployments object
+    val deploymentPattern = """"([a-f0-9]{64})"\s*:\s*"([^"]+)"""".r
+
+    deploymentPattern
+      .findAllMatchIn(json)
+      .map { m =>
+        val ensembleId = m.group(1)
+        val status     = m.group(2)
+        // We don't have allocation count in the list response, so default to 0
+        DeploymentSummary(ensembleId, status, allocationCount = 0)
+      }
+      .toList
+  }
 
   /**
     * Parse deployment manifest from JSON.
+    *
+    * Expected format (simplified):
+    * {
+    *   "ensemble_id": "...",
+    *   "peers": ["peer_id_1", "peer_id_2", ...],
+    *   "ip_addresses": { "allocation_name": "ip_address", ... },
+    *   "port_mappings": {
+    *     "allocation_name": [
+    *       { "public_port": 40400, "private_port": 40400, "allocation": "bootstrap" },
+    *       ...
+    *     ]
+    *   }
+    * }
     */
   private def parseDeploymentManifest(json: String): DeploymentManifest = {
     val ensembleIdPattern = """"ensemble_id"\s*:\s*"([^"]+)"""".r
+    val peerPattern       = """"peers"\s*:\s*\[((?:"[^"]+",?\s*)*)\]""".r
+    val peerItemPattern   = """"([^"]+)"""".r
+    val ipPattern         = """"([^"]+)"\s*:\s*"([^"]+)"""".r
+    val portMappingPattern =
+      """"public_port"\s*:\s*(\d+)[^}]*"private_port"\s*:\s*(\d+)[^}]*"allocation"\s*:\s*"([^"]+)"""".r
 
     val ensembleId = ensembleIdPattern
       .findFirstMatchIn(json)
       .map(_.group(1))
       .getOrElse("unknown")
 
-    DeploymentManifest(ensembleId, List.empty, Map.empty, Map.empty)
+    // Parse peers array
+    val peers = peerPattern
+      .findFirstMatchIn(json)
+      .map { m =>
+        peerItemPattern
+          .findAllMatchIn(m.group(1))
+          .map(_.group(1))
+          .toList
+      }
+      .getOrElse(List.empty)
+
+    // Parse IP addresses - look for patterns in ip_addresses section
+    val ipAddresses = {
+      val ipSectionPattern = """"ip_addresses"\s*:\s*\{([^}]+)\}""".r
+      ipSectionPattern
+        .findFirstMatchIn(json)
+        .map { m =>
+          ipPattern
+            .findAllMatchIn(m.group(1))
+            .map { ipMatch =>
+              (ipMatch.group(1), ipMatch.group(2))
+            }
+            .toMap
+        }
+        .getOrElse(Map.empty)
+    }
+
+    // Parse port mappings - simplified, assumes flat structure
+    val portMappings = portMappingPattern
+      .findAllMatchIn(json)
+      .map { m =>
+        val publicPort  = m.group(1).toInt
+        val privatePort = m.group(2).toInt
+        val allocation  = m.group(3)
+        (allocation, PortMapping(publicPort, privatePort, allocation))
+      }
+      .toList
+      .groupBy(_._1)
+      .map { case (alloc, ports) => (alloc, ports.map(_._2).toList) }
+
+    DeploymentManifest(ensembleId, peers, ipAddresses, portMappings)
   }
 
   /**
