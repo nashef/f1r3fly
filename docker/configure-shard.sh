@@ -126,48 +126,32 @@ for node in "${tls_nodes[@]}"; do
     openssl pkcs8 -topk8 -nocrypt -in "$node_dir/node.key.ec.pem" -out "$node_dir/node.key.pem"
     rm "$node_dir/node.key.ec.pem"
 
-    # Generate self-signed certificate (valid 10 years)
-    echo "Generating self-signed X.509 certificate..."
+    # Compute node ID from the private key BEFORE generating certificate
+    echo "Computing node ID from TLS private key..."
+    node_id=$($NODE_CLI get-node-id -k "$node_dir/node.key.pem" | grep -oE '[a-f0-9]{40}$' | tail -1)
+
+    if [[ -z "$node_id" ]]; then
+        echo "ERROR: Failed to compute node ID from private key"
+        exit 1
+    fi
+
+    echo "  Node ID: $node_id"
+
+    # Save node ID to file
+    echo "$node_id" > "$node_dir/node_id.txt"
+
+    # Generate self-signed certificate with node ID as CN (valid 10 years)
+    echo "Generating self-signed X.509 certificate with CN=$node_id..."
     openssl req -new -x509 -key "$node_dir/node.key.pem" \
         -out "$node_dir/node.certificate.pem" \
-        -days 3650 -subj "/CN=f1r3fly-$node"
+        -days 3650 -subj "/CN=$node_id"
 
     echo ""
     echo "✓ Generated TLS certificate for $node"
     echo "  Key:         $node_dir/node.key.pem"
     echo "  Certificate: $node_dir/node.certificate.pem"
-done
-
-# ----------------------------------------------------------------------------
-# Extract Node IDs from TLS Certificates
-# ----------------------------------------------------------------------------
-
-print_section "Extracting Node IDs from TLS Certificates"
-
-for node in "${tls_nodes[@]}"; do
-    print_step "Extracting node ID for $node"
-
-    cert_file="$KEYS_DIR/$node/node.certificate.pem"
-
-    if [[ ! -f "$cert_file" ]]; then
-        echo "ERROR: TLS certificate not found at $cert_file"
-        exit 1
-    fi
-
-    echo "Running: $NODE_CLI get-node-id -c $cert_file"
-    # Extract only the node ID (last line after the emoji output)
-    node_id=$($NODE_CLI get-node-id -c "$cert_file" | grep -oE '[a-f0-9]{40}$' | tail -1)
-
-    if [[ -z "$node_id" ]]; then
-        echo "ERROR: Failed to extract node ID from certificate"
-        exit 1
-    fi
-
-    # Save node ID (just the hex string, no extra output)
-    echo "$node_id" > "$KEYS_DIR/$node/node_id.txt"
-
-    echo ""
-    echo "✓ Extracted node ID for $node: $node_id"
+    echo "  Node ID:     $node_id"
+    echo "  CN:          $node_id"
 done
 
 # Store bootstrap node ID for convenience
