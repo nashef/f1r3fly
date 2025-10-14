@@ -151,10 +151,16 @@ object Setup {
       }
 
       externalServices <- Sync[F].delay(
-                           ExternalServices.forNodeType(conf.casper.validatorPrivateKey.nonEmpty)
+                           ExternalServices(
+                             conf.casper.validatorPrivateKey.nonEmpty,
+                             conf.openai,
+                             conf.ollama,
+                             conf.nunet
+                           )
                          )
 
       // Runtime for `rnode eval`
+      // Note: Uses the same externalServices as main runtime to respect configuration
       evalRuntime <- {
         implicit val sp = span
         rnodeStoreManager.evalStores.flatMap(
@@ -164,7 +170,7 @@ object Setup {
               Par(),
               false,
               Seq.empty,
-              ExternalServices.forNodeType(isValidator = false)
+              externalServices
             )
         )
       }

@@ -14,6 +14,7 @@ import coop.rchain.rholang.interpreter.SystemProcesses.Definition
 import coop.rchain.rholang.interpreter.{ReplayRhoRuntime, RhoRuntime, RholangCLI}
 import coop.rchain.rholang.externalservices.{
   GrpcClientService,
+  NunetServiceMock,
   OllamaServiceMock,
   OpenAIServiceMock,
   TestExternalServices
@@ -71,12 +72,14 @@ object Resources {
           _,
           Par(),
           false,
-          // Always include AI and Ollama processes in tests to avoid config dependency
-          RhoRuntime.stdRhoAIProcesses[F] ++ RhoRuntime.stdRhoOllamaProcesses[F],
+          // Always include AI, Ollama, and Nunet processes in tests to avoid config dependency
+          RhoRuntime.stdRhoAIProcesses[F] ++ RhoRuntime.stdRhoOllamaProcesses[F] ++ RhoRuntime
+            .stdRhoNunetProcesses[F],
           TestExternalServices(
             OpenAIServiceMock.echoService,
             GrpcClientService.noOpInstance,
-            OllamaServiceMock.echoService
+            OllamaServiceMock.echoService,
+            NunetServiceMock.mockService
           )
         )
       )
@@ -113,9 +116,9 @@ object Resources {
                      space,
                      replay,
                      initRegistry,
-                     // Always include AI and Ollama processes in tests
+                     // Always include AI, Ollama, and Nunet processes in tests
                      additionalSystemProcesses ++ RhoRuntime.stdRhoAIProcesses[F] ++ RhoRuntime
-                       .stdRhoOllamaProcesses[F],
+                       .stdRhoOllamaProcesses[F] ++ RhoRuntime.stdRhoNunetProcesses[F],
                      Par(),
                      externalServices
                    )
