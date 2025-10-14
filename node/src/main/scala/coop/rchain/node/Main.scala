@@ -272,12 +272,11 @@ object Main {
     */
   private def readPlainKeyFromFile[F[_]: Sync](keyPath: Path): F[PrivateKey] =
     for {
-      fileContent <- Sync[F].delay(
-                      scala.io.Source
-                        .fromFile(keyPath.toFile)
-                        .mkString
-                        .replaceAll("\\s", "") // Remove all whitespace including newlines
-                    )
+      fileContent <- Sync[F].delay {
+                      val source = scala.io.Source.fromFile(keyPath.toFile)
+                      try source.mkString.replaceAll("\\s", "")
+                      finally source.close()
+                    }
       _ <- if (fileContent.isEmpty)
             Sync[F].raiseError[Unit](
               new Exception(
