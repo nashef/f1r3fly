@@ -1,0 +1,306 @@
+# ============================================================================
+# Event-Driven Autopropose Network
+# ============================================================================
+# 
+# This docker-compose configuration creates a fully decentralized event-driven
+# blockchain network that replaces centralized time-based autopropose with:
+#
+#   1. Validators using --autopropose flag (deploy + block triggered)
+#   2. Activity generator deploying to single endpoint (bootstrap)
+#   3. Network gossip distributing to all validators automatically
+#   4. Natural consensus-based validator rotation
+#
+# Key Features:
+#   - No centralized coordination
+#   - Devnet-ready (no static validator lists)
+#   - Production-like behavior
+#   - Scalable to any number of validators
+#
+# Usage:
+#   docker-compose up -d          # Start network
+#   docker-compose logs -f        # View logs
+#   docker-compose down           # Stop network
+#   ./scripts/clean-data.sh       # Reset to genesis
+#
+# ============================================================================
+
+# ============================================================================
+# Shared Configuration Template
+# ============================================================================
+x-rnode: &default-rnode
+  image: f1r3flyindustries/f1r3fly-scala-node
+  user: root
+  networks:
+    - f1r3fly-event-driven
+  environment:
+    - OPENAI_ENABLED=${OPENAI_ENABLED}
+    - OPENAI_SCALA_CLIENT_API_KEY=${OPENAI_SCALA_CLIENT_API_KEY}
+
+# ============================================================================
+# JAVA_OPTS Explanation
+# ============================================================================
+# Memory Management:
+#   -Xms384m                      Initial heap size (384MB for validators, 192MB for observer)
+#   -Xmx1280m                     Maximum heap size (1.28GB for validators, 640MB for observer)
+#                                 Set to ~60-65% of Docker memory limit to leave room for non-heap memory
+#   -XX:MaxMetaspaceSize=256m     Maximum metaspace for class metadata (256MB for all services)
+#
+# Garbage Collection (G1GC):
+#   -XX:+UseG1GC                  Use G1 garbage collector (modern, low-pause collector)
+#   -XX:MaxGCPauseMillis=200      Target max GC pause time of 200ms
+#   -XX:+UseStringDeduplication   Remove duplicate String objects from heap (saves memory)
+#   -XX:GCTimeRatio=4             Spend 20% time on GC, 80% on application (aggressive cleaning)
+#   -XX:AdaptiveSizePolicyWeight=90  GC adapts quickly to changing workload (0-100, default=10)
+#
+# Why These Settings:
+#   - Heap < Container Memory prevents OOM from non-heap memory usage
+#   - Aggressive GC (ratio=4) prevents heap buildup and long pauses
+#   - Fast adaptation (weight=90) handles variable blockchain workload
+#   - Low pause target (200ms) keeps node responsive during consensus
+#   - String dedup saves memory in Scala applications
+# ============================================================================
+
+# ============================================================================
+# Services
+# ============================================================================
+services:
+
+  # ==========================================================================
+  # Bootstrap Node - Genesis Ceremony Master
+  # ==========================================================================
+  # The bootstrap node coordinates genesis ceremony and acts as the initial
+  # connection point for all validators. It does NOT have --autopropose
+  # enabled and does not participate in block validation.
+  # ==========================================================================
+  boot:
+    <<: *default-rnode
+    container_name: ${BOOTSTRAP_HOST}
+    environment:
+      - JAVA_OPTS=-Xms384m -Xmx1280m -XX:MaxMetaspaceSize=256m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+UseStringDeduplication -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    command:
+      [
+        "-Dlogback.configurationFile=/var/lib/rnode/logback.xml",
+        "run",
+        "--host=${BOOTSTRAP_HOST}",
+        "--bootstrap=rnode://${BOOTSTRAP_NODE_ID}@${BOOTSTRAP_HOST}?protocol=40400&discovery=40404",
+        "--allow-private-addresses",
+        "--validator-private-key=${BOOTSTRAP_PRIVATE_KEY}"
+      ]
+    ports:
+      - "40400:40400"  # Protocol server
+      - "40401:40401"  # External gRPC API
+      - "40402:40402"  # Internal gRPC API (activity generator target)
+      - "40403:40403"  # HTTP API
+      - "40404:40404"  # Kademlia discovery
+      - "40405:40405"  # Admin HTTP API
+    volumes:
+      - ./conf/bootstrap-ceremony.conf:/var/lib/rnode/rnode.conf
+      - ./genesis/wallets.txt:/var/lib/rnode/genesis/wallets.txt
+      - ./genesis/bonds.txt:/var/lib/rnode/genesis/bonds.txt
+      - ./conf/logback.xml:/var/lib/rnode/logback.xml
+      - ./data/${BOOTSTRAP_HOST}:/var/lib/rnode/
+      - ./certs/bootstrap/node.certificate.pem:/var/lib/rnode/node.certificate.pem:ro
+      - ./certs/bootstrap/node.key.pem:/var/lib/rnode/node.key.pem:ro
+
+  # ==========================================================================
+  # Validator 1 - Genesis Validator with Event-Driven Autopropose
+  # ==========================================================================
+  validator1:
+    <<: *default-rnode
+    container_name: ${VALIDATOR1_HOST}
+    environment:
+      - JAVA_OPTS=-Xms384m -Xmx1280m -XX:MaxMetaspaceSize=256m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+UseStringDeduplication -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    command:
+      [
+        "-Dlogback.configurationFile=/var/lib/rnode/logback.xml",
+        "run",
+        "--host=${VALIDATOR1_HOST}",
+        "--allow-private-addresses",
+        "--bootstrap=rnode://${BOOTSTRAP_NODE_ID}@${BOOTSTRAP_HOST}?protocol=40400&discovery=40404",
+        "--validator-public-key=${VALIDATOR1_PUBLIC_KEY}",
+        "--validator-private-key=${VALIDATOR1_PRIVATE_KEY}",
+        "--genesis-validator",
+        "--autopropose"
+      ]
+    ports:
+      - "40410:40400"  # Protocol server
+      - "40411:40401"  # External gRPC API
+      - "40412:40402"  # Internal gRPC API
+      - "40413:40403"  # HTTP API
+      - "40414:40404"  # Kademlia discovery
+      - "40415:40405"  # Admin HTTP API
+    volumes:
+      - ./conf/shared-rnode.conf:/var/lib/rnode/rnode.conf
+      - ./genesis/wallets.txt:/var/lib/rnode/genesis/wallets.txt
+      - ./genesis/bonds.txt:/var/lib/rnode/genesis/bonds.txt
+      - ./conf/logback.xml:/var/lib/rnode/logback.xml
+      - ./data/${VALIDATOR1_HOST}:/var/lib/rnode/
+      - ./certs/validator1/node.certificate.pem:/var/lib/rnode/node.certificate.pem:ro
+      - ./certs/validator1/node.key.pem:/var/lib/rnode/node.key.pem:ro
+
+  # ==========================================================================
+  # Validator 2 - Genesis Validator with Event-Driven Autopropose
+  # ==========================================================================
+  validator2:
+    <<: *default-rnode
+    container_name: ${VALIDATOR2_HOST}
+    environment:
+      - JAVA_OPTS=-Xms384m -Xmx1280m -XX:MaxMetaspaceSize=256m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+UseStringDeduplication -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    command:
+      [
+        "-Dlogback.configurationFile=/var/lib/rnode/logback.xml",
+        "run",
+        "--host=${VALIDATOR2_HOST}",
+        "--allow-private-addresses",
+        "--bootstrap=rnode://${BOOTSTRAP_NODE_ID}@${BOOTSTRAP_HOST}?protocol=40400&discovery=40404",
+        "--validator-public-key=${VALIDATOR2_PUBLIC_KEY}",
+        "--validator-private-key=${VALIDATOR2_PRIVATE_KEY}",
+        "--genesis-validator",
+        "--autopropose"
+      ]
+    ports:
+      - "40420:40400"  # Protocol server
+      - "40421:40401"  # External gRPC API
+      - "40422:40402"  # Internal gRPC API
+      - "40423:40403"  # HTTP API
+      - "40424:40404"  # Kademlia discovery
+      - "40425:40405"  # Admin HTTP API
+    volumes:
+      - ./conf/shared-rnode.conf:/var/lib/rnode/rnode.conf
+      - ./genesis/wallets.txt:/var/lib/rnode/genesis/wallets.txt
+      - ./genesis/bonds.txt:/var/lib/rnode/genesis/bonds.txt
+      - ./conf/logback.xml:/var/lib/rnode/logback.xml
+      - ./data/${VALIDATOR2_HOST}:/var/lib/rnode/
+      - ./certs/validator2/node.certificate.pem:/var/lib/rnode/node.certificate.pem:ro
+      - ./certs/validator2/node.key.pem:/var/lib/rnode/node.key.pem:ro
+
+  # ==========================================================================
+  # Validator 3 - Genesis Validator with Event-Driven Autopropose
+  # ==========================================================================
+  validator3:
+    <<: *default-rnode
+    container_name: ${VALIDATOR3_HOST}
+    environment:
+      - JAVA_OPTS=-Xms384m -Xmx1280m -XX:MaxMetaspaceSize=256m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+UseStringDeduplication -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    command:
+      [
+        "-Dlogback.configurationFile=/var/lib/rnode/logback.xml",
+        "run",
+        "--host=${VALIDATOR3_HOST}",
+        "--allow-private-addresses",
+        "--bootstrap=rnode://${BOOTSTRAP_NODE_ID}@${BOOTSTRAP_HOST}?protocol=40400&discovery=40404",
+        "--validator-public-key=${VALIDATOR3_PUBLIC_KEY}",
+        "--validator-private-key=${VALIDATOR3_PRIVATE_KEY}",
+        "--genesis-validator",
+        "--autopropose"
+      ]
+    ports:
+      - "40430:40400"  # Protocol server
+      - "40431:40401"  # External gRPC API
+      - "40432:40402"  # Internal gRPC API
+      - "40433:40403"  # HTTP API
+      - "40434:40404"  # Kademlia discovery
+      - "40435:40405"  # Admin HTTP API
+    volumes:
+      - ./conf/shared-rnode.conf:/var/lib/rnode/rnode.conf
+      - ./genesis/wallets.txt:/var/lib/rnode/genesis/wallets.txt
+      - ./genesis/bonds.txt:/var/lib/rnode/genesis/bonds.txt
+      - ./conf/logback.xml:/var/lib/rnode/logback.xml
+      - ./data/${VALIDATOR3_HOST}:/var/lib/rnode/
+      - ./certs/validator3/node.certificate.pem:/var/lib/rnode/node.certificate.pem:ro
+      - ./certs/validator3/node.key.pem:/var/lib/rnode/node.key.pem:ro
+
+  # ==========================================================================
+  # No Activity Generator Needed!
+  # ==========================================================================
+  # This network is SELF-SUSTAINING after ONE initial deploy:
+  # 
+  # 1. Start network: docker-compose up -d
+  # 2. Wait for genesis (2-3 minutes)
+  # 3. Send ONE deploy to kickstart:
+  #      cd /path/to/rust-client
+  #      cargo run -- transfer --to-address "111..." --amount 1
+  # 4. Chain runs forever via dummy deploys + block-triggered autopropose
+  # 
+  # See README.md for details on the self-sustaining mechanism.
+  # ==========================================================================
+
+  # ==========================================================================
+  # Read-Only Observer Node (Optional)
+  # ==========================================================================
+  # Observer node for querying blockchain state without participating in
+  # consensus. Useful for monitoring and API queries without affecting
+  # validator performance.
+  # ==========================================================================
+  readonly:
+    <<: *default-rnode
+    container_name: ${READONLY_HOST}
+    environment:
+      - JAVA_OPTS=-Xms192m -Xmx640m -XX:MaxMetaspaceSize=256m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+UseStringDeduplication -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    command:
+      [
+        "-Dlogback.configurationFile=/var/lib/rnode/logback.xml",
+        "run",
+        "--host=${READONLY_HOST}",
+        "--bootstrap=rnode://${BOOTSTRAP_NODE_ID}@${BOOTSTRAP_HOST}?protocol=40400&discovery=40404",
+        "--no-upnp",
+        "--allow-private-addresses"
+      ]
+    ports:
+      - "40451:40401"  # External gRPC API
+      - "40452:40402"  # Internal gRPC API
+      - "40453:40403"  # HTTP API
+    volumes:
+      - ./conf/logback.xml:/var/lib/rnode/logback.xml
+      - ./data/${READONLY_HOST}:/var/lib/rnode/
+    depends_on:
+      - boot
+
+# ============================================================================
+# Networks
+# ============================================================================
+networks:
+  f1r3fly-event-driven:
+    driver: bridge
+    name: f1r3fly-event-driven
+
