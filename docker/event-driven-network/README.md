@@ -13,9 +13,9 @@ docker-compose up -d
 # All nodes need to output 'Making a transition to Running state.'
 docker-compose logs -f | grep "Making a transition to Running state"
 
-# 3. Make deploy with rust-client or any client
+# 3. Make first deploy to kickstart the network
 cd /path/to/rust-client
-cargo run -- transfer --to-address "111129p33f7vaRrpLqK8Nr35Y2aacAjrR5pd6PCzqcdrMuPHzymczH" --amount 1
+cargo run -- transfer --to-address "111129p33f7vaRrpLqK8Nr35Y2aacAjrR5pd6PCzqcdrMuPHzymczH" --amount 20 --private-key 5f668a7ee96d944a4494cc947e4005e172d7ab3461ee5538f1f2a45a835e9657
 
 # 4. Done! Chain is now self-sustaining
 # Monitor with:
@@ -142,4 +142,20 @@ curl http://localhost:40403/api/blocks?depth=20
 # Check block production (using rust-client)
 cd /path/to/rust-client
 cargo run -- show-main-chain --host localhost --port 40412 --depth 10
+```
+
+## Testing Deploys
+
+After the network is running, you can test additional deploys:
+
+```bash
+cd /path/to/rust-client
+
+# Recommended test deploy (uses funded devnet account)
+cargo run -- transfer --to-address "111129p33f7vaRrpLqK8Nr35Y2aacAjrR5pd6PCzqcdrMuPHzymczH" --amount 20 --private-key 5f668a7ee96d944a4494cc947e4005e172d7ab3461ee5538f1f2a45a835e9657
+
+# The transfer will:
+# - Deploy to validator1 (port 40412)
+# - Wait for block inclusion
+# - Wait for finalization (checked on validator1)
 ```
