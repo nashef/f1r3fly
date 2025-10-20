@@ -253,6 +253,17 @@ lazy val crypto = (project in file("crypto"))
   )
   .dependsOn(shared)
 
+lazy val cudo = (project in file("cudo"))
+  .settings(commonSettings: _*)
+  .settings(
+    name := "cudo",
+    libraryDependencies ++= commonDependencies ++ Seq(
+      gson,
+      junit
+    )
+  )
+  .dependsOn(shared % "compile->compile;test->test")
+
 lazy val models = (project in file("models"))
   .settings(commonSettings: _*)
   .settings(
@@ -488,7 +499,8 @@ lazy val rholang = (project in file("rholang"))
     models % "compile->compile;test->test",
     rspace % "compile->compile;test->test",
     shared % "compile->compile;test->test",
-    crypto
+    crypto,
+    cudo
   )
 
 lazy val rholangCLI = (project in file("rholang-cli"))

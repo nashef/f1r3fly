@@ -47,6 +47,7 @@ object Dependencies {
   val endpointsOpenApi    = "org.endpoints4s"            %% "openapi"                   % "3.0.0"
   val fs2Core             = "co.fs2"                     %% "fs2-core"                  % fs2Version
   val fs2Io               = "co.fs2"                     %% "fs2-io"                    % fs2Version
+  val gson                = "com.google.code.gson"        % "gson"                      % "2.10.1"
   val guava               = "com.google.guava"            % "guava"                     % "30.1-jre"
   val hasher              = "com.roundeights"            %% "hasher"                    % "1.2.0"
   val http4sBlazeClient   = "org.http4s"                 %% "http4s-blaze-client"       % http4sVersion
@@ -56,6 +57,7 @@ object Dependencies {
   val jaxb                = "javax.xml.bind"              % "jaxb-api"                  % "2.3.1"
   val jline               = ("org.scala-lang"             % "jline"                     % "2.10.7")
     .exclude("org.fusesource.jansi", "jansi")
+  val junit               = "junit"                       % "junit"                     % "4.13.2" % "test"
   val julToSlf4j          = "org.slf4j"                   % "jul-to-slf4j"              % slf4jVersion
   // see https://jitpack.io/#rchain/kalium
   val kalium              = "com.github.rchain"           % "kalium"                    % "0.8.1"
