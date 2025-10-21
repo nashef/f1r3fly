@@ -368,7 +368,7 @@ class NodeRuntime[F[_]: Monixable: ConcurrentEffect: Parallel: Timer: ContextShi
           .create[F](proposeRequestsQueue, proposer.get, proposerStateRefOpt.get)
       else fs2.Stream.empty
 
-      updateForkChoiceLoopStream = fs2.Stream.eval(updateForkChoiceLoop).repeat
+      updateForkChoiceLoopStream    = fs2.Stream.eval(updateForkChoiceLoop).repeat
       mergeableChannelsGCLoopStream = fs2.Stream.eval(mergeableChannelsGCLoop).repeat
 
       serverStream = fs2

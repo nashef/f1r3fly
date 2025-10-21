@@ -8,7 +8,7 @@ import coop.rchain.models.syntax._
 import cats.syntax.all._
 import coop.rchain.blockstorage.KeyValueBlockStore
 import coop.rchain.blockstorage.casperbuffer.CasperBufferKeyValueStorage
-import coop.rchain.blockstorage.dag.BlockDagKeyValueStorage
+import coop.rchain.blockstorage.dag.{BlockDagKeyValueStorage, BlockDagStorage}
 import coop.rchain.blockstorage.deploy.KeyValueDeployStorage
 import coop.rchain.blockstorage.finality.LastFinalizedKeyValueStorage
 import coop.rchain.casper._
@@ -65,6 +65,7 @@ object Setup {
     (
         PacketHandler[F],
         APIServers,
+        CasperLoop[F],
         CasperLoop[F],
         CasperLoop[F],
         EngineInit[F],
@@ -336,25 +337,42 @@ object Setup {
       // Garbage collect mergeable channels data that is provably unreachable
       // Only runs when enable-mergeable-channel-gc is true
       mergeableChannelsGCLoop = {
-        implicit val bs = blockStore
+        implicit val bs                            = blockStore
+        implicit val bds                           = blockDagStorage
+        implicit val metricsSource: Metrics.Source = Metrics.BaseSource
+        val casperShardConf = CasperShardConf(
+          conf.casper.faultToleranceThreshold,
+          conf.casper.shardName,
+          conf.casper.parentShardId,
+          conf.casper.finalizationRate,
+          conf.casper.maxNumberOfParents,
+          conf.casper.maxParentDepth.getOrElse(Int.MaxValue),
+          conf.casper.synchronyConstraintThreshold.toFloat,
+          conf.casper.heightConstraintThreshold,
+          50,
+          1,
+          1,
+          conf.casper.genesisBlockData.bondMinimum,
+          conf.casper.genesisBlockData.bondMaximum,
+          conf.casper.genesisBlockData.epochLength,
+          conf.casper.genesisBlockData.quarantineLength,
+          conf.casper.minPhloPrice,
+          conf.casper.enableMergeableChannelGC,
+          conf.casper.mergeableChannelsGCDepthBuffer
+        )
         for {
-          engine <- engineCell.read
           _ <- if (conf.casper.enableMergeableChannelGC) {
-            engine.withCasper(
-              casper =>
                 for {
                   dag <- BlockDagStorage[F].getRepresentation
                   _ <- coop.rchain.casper.util.MergeableChannelsGC.collectGarbage(
                         dag,
                         runtimeManager,
-                        casper.casperShardConf
+                        casperShardConf
                       )
-                } yield (),
-              ().pure[F]
-            )
-          } else {
-            ().pure[F]  // GC disabled, no-op
-          }
+                } yield ()
+              } else {
+                Sync[F].unit
+              }
           _ <- Time[F].sleep(conf.casper.mergeableChannelsGCInterval)
         } yield ()
       }
