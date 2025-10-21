@@ -333,6 +333,31 @@ object Setup {
           _ <- Running.updateForkChoiceTipsIfStuck(conf.casper.forkChoiceStaleThreshold)
         } yield ()
       }
+      // Garbage collect mergeable channels data that is provably unreachable
+      // Only runs when enable-mergeable-channel-gc is true
+      mergeableChannelsGCLoop = {
+        implicit val bs = blockStore
+        for {
+          engine <- engineCell.read
+          _ <- if (conf.casper.enableMergeableChannelGC) {
+            engine.withCasper(
+              casper =>
+                for {
+                  dag <- BlockDagStorage[F].getRepresentation
+                  _ <- coop.rchain.casper.util.MergeableChannelsGC.collectGarbage(
+                        dag,
+                        runtimeManager,
+                        casper.casperShardConf
+                      )
+                } yield (),
+              ().pure[F]
+            )
+          } else {
+            ().pure[F]  // GC disabled, no-op
+          }
+          _ <- Time[F].sleep(conf.casper.mergeableChannelsGCInterval)
+        } yield ()
+      }
       engineInit = engineCell.read >>= (_.init)
       runtimeCleanup = NodeRuntime.cleanup(
         rnodeStoreManager
@@ -372,6 +397,7 @@ object Setup {
       apiServers,
       casperLoop,
       updateForkChoiceLoop,
+      mergeableChannelsGCLoop,
       engineInit,
       casperLaunch,
       reportingRoutes,

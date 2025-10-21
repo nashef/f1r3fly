@@ -129,7 +129,8 @@ final case class CasperShardConf(
     epochLength: Int,
     quarantineLength: Int,
     minPhloPrice: Long,
-    noDeleteMergeableChannels: Boolean
+    enableMergeableChannelGC: Boolean,
+    mergeableChannelsGCDepthBuffer: Int
 )
 
 sealed abstract class MultiParentCasperInstances {

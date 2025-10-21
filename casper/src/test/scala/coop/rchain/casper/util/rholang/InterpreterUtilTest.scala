@@ -68,7 +68,7 @@ class InterpreterUtilTest
       0,
       Map.empty,
       OnChainCasperState(
-        CasperShardConf(0, "", "", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false),
+        CasperShardConf(0, "", "", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, 10),
         Map.empty,
         Seq.empty
       )

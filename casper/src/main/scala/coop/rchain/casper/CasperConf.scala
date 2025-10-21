@@ -24,7 +24,9 @@ final case class CasperConf(
     genesisBlockData: GenesisBlockData,
     genesisCeremony: GenesisCeremonyConf,
     minPhloPrice: Long,
-    noDeleteMergeableChannels: Boolean
+    enableMergeableChannelGC: Boolean,
+    mergeableChannelsGCInterval: FiniteDuration,
+    mergeableChannelsGCDepthBuffer: Int
 )
 
 final case class GenesisBlockData(

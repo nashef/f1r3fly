@@ -132,12 +132,15 @@ class MultiParentCasperImpl[F[_]
           _ <- BlockIndex.cache.remove(h).pure
 
           // Remove block post-state mergeable channels from persistent store
-          // Skip deletion if configured (needed for multi-parent merging)
+          // When GC enabled: Skip immediate deletion, let background GC handle it safely
+          // When GC disabled: Delete immediately (legacy behavior)
           stateHash = block.body.state.postStateHash.toBlake2b256Hash.bytes
-          _ <- if (!casperShardConf.noDeleteMergeableChannels) {
-                 RuntimeManager[F].getMergeableStore.delete(stateHash)
-               } else {
+          _ <- if (casperShardConf.enableMergeableChannelGC) {
+                 // GC enabled: defer to background GC for safe deletion
                  ().pure[F]
+               } else {
+                 // GC disabled: immediate deletion (legacy)
+                 RuntimeManager[F].getMergeableStore.delete(stateHash)
                }
         } yield ()
       }.void

@@ -162,6 +162,7 @@ class NodeRuntime[F[_]: Monixable: ConcurrentEffect: Parallel: Timer: ContextShi
         apiServers,
         casperLoop,
         updateForkChoiceLoop,
+        mergeableChannelsGCLoop,
         engineInit,
         casperLaunch,
         reportingHTTPRoutes,
@@ -196,6 +197,7 @@ class NodeRuntime[F[_]: Monixable: ConcurrentEffect: Parallel: Timer: ContextShi
           apiServers,
           casperLoop,
           updateForkChoiceLoop,
+          mergeableChannelsGCLoop,
           engineInit,
           reportingHTTPRoutes,
           webApi,
@@ -227,6 +229,7 @@ class NodeRuntime[F[_]: Monixable: ConcurrentEffect: Parallel: Timer: ContextShi
       apiServers: APIServers,
       casperLoop: CasperLoop[F],
       updateForkChoiceLoop: CasperLoop[F],
+      mergeableChannelsGCLoop: CasperLoop[F],
       engineInit: EngineInit[F],
       reportingRoutes: ReportingHttpRoutes[F],
       webApi: WebApi[F],
@@ -366,6 +369,7 @@ class NodeRuntime[F[_]: Monixable: ConcurrentEffect: Parallel: Timer: ContextShi
       else fs2.Stream.empty
 
       updateForkChoiceLoopStream = fs2.Stream.eval(updateForkChoiceLoop).repeat
+      mergeableChannelsGCLoopStream = fs2.Stream.eval(mergeableChannelsGCLoop).repeat
 
       serverStream = fs2
         .Stream(
@@ -377,7 +381,8 @@ class NodeRuntime[F[_]: Monixable: ConcurrentEffect: Parallel: Timer: ContextShi
           proposerStream,
           engineInitStream,
           casperLoopStream,
-          updateForkChoiceLoopStream
+          updateForkChoiceLoopStream,
+          mergeableChannelsGCLoopStream
         )
         .parJoinUnbounded
 
