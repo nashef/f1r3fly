@@ -264,7 +264,10 @@ class ConfigMapperSpec extends FunSuite with Matchers {
           genesisValidatorMode = true,
           ceremonyMasterMode = true
         ),
-        minPhloPrice = 1
+        minPhloPrice = 1,
+        enableMergeableChannelGC = false,
+        mergeableChannelsGCInterval = 5.minutes,
+        mergeableChannelsGCDepthBuffer = 10
       ),
       metrics = Metrics(
         prometheus = true,

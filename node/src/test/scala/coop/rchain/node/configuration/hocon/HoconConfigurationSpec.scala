@@ -168,7 +168,10 @@ class HoconConfigurationSpec extends FunSuite with Matchers {
           genesisValidatorMode = false,
           ceremonyMasterMode = false
         ),
-        minPhloPrice = 1
+        minPhloPrice = 1,
+        enableMergeableChannelGC = false,
+        mergeableChannelsGCInterval = 5.minutes,
+        mergeableChannelsGCDepthBuffer = 10
       ),
       metrics = Metrics(
         prometheus = false,
