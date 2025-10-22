@@ -299,22 +299,25 @@ class MultiParentCasperImpl[F[_]
         stepName: String,
         step: F[Either[BlockError, A]]
     ): EitherT[F, BlockError, (A, String)] =
-      EitherT.liftF(Span[F].mark(s"before-$stepName")) *>
-        EitherT(Stopwatch.duration(step).map {
-          case (result, elapsed) => result.map(r => (r, elapsed))
-        }) <*
-        EitherT.liftF(Span[F].mark(s"after-$stepName"))
+      for {
+        _ <- EitherT.liftF(Span[F].mark(s"before-$stepName"))
+        result <- EitherT(Stopwatch.duration(step).map {
+                   case (result, elapsed) => result.map(r => (r, elapsed))
+                 })
+        _ <- EitherT.liftF(Span[F].mark(s"after-$stepName"))
+      } yield result
 
     val validationProcess: EitherT[F, BlockError, ValidBlock] =
       for {
-        (_, t1) <- timedStep(
+        result1 <- timedStep(
                     "block-summary",
                     Validate
                       .blockSummary(b, approvedBlock, s, casperShardConf.shardName, deployLifespan)
                   )
-        _ <- EitherT.liftF(Span[F].mark("post-validation-block-summary"))
+        t1 = result1._2
+        _  <- EitherT.liftF(Span[F].mark("post-validation-block-summary"))
 
-        (_, t2) <- timedStep(
+        result2 <- timedStep(
                     "checkpoint",
                     InterpreterUtil
                       .validateBlockCheckpoint(b, s, RuntimeManager[F])
@@ -324,25 +327,29 @@ class MultiParentCasperImpl[F[_]
                         case Right(None)    => Left(BlockStatus.invalidTransaction)
                       }
                   )
-        _ <- EitherT.liftF(Span[F].mark("transactions-validated"))
+        t2 = result2._2
+        _  <- EitherT.liftF(Span[F].mark("transactions-validated"))
 
-        (_, t3) <- timedStep("bonds-cache", Validate.bondsCache(b, RuntimeManager[F]))
+        result3 <- timedStep("bonds-cache", Validate.bondsCache(b, RuntimeManager[F]))
+        t3      = result3._2
         _       <- EitherT.liftF(Span[F].mark("bonds-cache-validated"))
 
-        (_, t4) <- timedStep("neglected-invalid-block", Validate.neglectedInvalidBlock(b, s))
+        result4 <- timedStep("neglected-invalid-block", Validate.neglectedInvalidBlock(b, s))
+        t4      = result4._2
         _       <- EitherT.liftF(Span[F].mark("neglected-invalid-block-validated"))
 
-        (_, t5) <- timedStep(
+        result5 <- timedStep(
                     "neglected-equivocation",
                     EquivocationDetector
                       .checkNeglectedEquivocationsWithUpdate(b, s.dag, approvedBlock)
                   )
-        _ <- EitherT.liftF(Span[F].mark("neglected-equivocation-validated"))
+        t5 = result5._2
+        _  <- EitherT.liftF(Span[F].mark("neglected-equivocation-validated"))
 
         // This validation is only to punish validator which accepted lower price deploys.
         // And this can happen if not configured correctly.
         minPhloPrice = casperShardConf.minPhloPrice
-        (_, t6) <- timedStep(
+        result6 <- timedStep(
                     "phlo-price",
                     Validate.phloPrice(b, minPhloPrice).recoverWith {
                       case _ =>
@@ -351,14 +358,17 @@ class MultiParentCasperImpl[F[_]
                           .as(BlockStatus.valid.asRight[BlockError])
                     }
                   )
-        _ <- EitherT.liftF(Span[F].mark("phlogiston-price-validated"))
+        t6 = result6._2
+        _  <- EitherT.liftF(Span[F].mark("phlogiston-price-validated"))
 
         depDag <- EitherT.liftF(CasperBufferStorage[F].toDoublyLinkedDag)
-        (status, t7) <- timedStep(
-                         "simple-equivocation",
-                         EquivocationDetector.checkEquivocations(depDag, b, s.dag)
-                       )
-        _ <- EitherT.liftF(Span[F].mark("equivocation-validated"))
+        result7 <- timedStep(
+                    "simple-equivocation",
+                    EquivocationDetector.checkEquivocations(depDag, b, s.dag)
+                  )
+        status = result7._1
+        t7     = result7._2
+        _      <- EitherT.liftF(Span[F].mark("equivocation-validated"))
 
         // Log detailed timing breakdown
         _ <- EitherT.liftF(
