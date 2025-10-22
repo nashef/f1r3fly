@@ -146,15 +146,10 @@ class StackSafetySpec extends FlatSpec with TableDrivenPropertyChecks with Match
     checkAll(hugeNested("@0!(", "1", ")"))
   }
 
-  //FIXME: unbelievably slow: takes 4 s for depth 500 = 8 ms / level
-  ignore should "handle a huge receive nested on channel side" in {
-    //  for(x <-
-    //    @{for(x <- @{for(x <-
-    //      @0
-    //    ) { Nil }}) { Nil }}
-    //  ) { Nil }
-    checkAll("for(x <- " + hugeNested("@{for(x <- ", "@0", ") { Nil }}") + ") { Nil }")
-  }
+  // NOTE: Removed ignored test "handle a huge receive nested on channel side"
+  // The test was too slow (4s for depth 500 = 8ms/level) and provided limited value.
+  // Stack safety for nested receives is adequately covered by other tests.
+  // See issue #221 for rationale on removing ignored tests.
 
   // TODO receive where patterns are other receives
   // TOOO receive with a huge arity
