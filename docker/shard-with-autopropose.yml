@@ -10,8 +10,8 @@ x-rnode: &default-rnode
 services:
   boot:
     <<: *default-rnode
-    container_name: ${BOOTSTRAP_HOST}
-    entrypoint: ["/bin/bash", "-c"]
+    container_name: $BOOTSTRAP_HOST
+    restart: always
     command:
       - |
         BOOTSTRAP_NODE_ID=$$(cat /var/lib/rnode/validator-keys/node_id.txt)
@@ -42,8 +42,8 @@ services:
 
   validator1:
     <<: *default-rnode
-    container_name: ${VALIDATOR1_HOST}
-    entrypoint: ["/bin/bash", "-c"]
+    container_name: $VALIDATOR1_HOST
+    restart: always
     command:
       - |
         BOOTSTRAP_NODE_ID=$$(cat /var/lib/rnode/bootstrap-node-id/node_id.txt)
@@ -75,8 +75,8 @@ services:
 
   validator2:
     <<: *default-rnode
-    container_name: ${VALIDATOR2_HOST}
-    entrypoint: ["/bin/bash", "-c"]
+    container_name: $VALIDATOR2_HOST
+    restart: always
     command:
       - |
         BOOTSTRAP_NODE_ID=$$(cat /var/lib/rnode/bootstrap-node-id/node_id.txt)
@@ -108,8 +108,8 @@ services:
 
   validator3:
     <<: *default-rnode
-    container_name: ${VALIDATOR3_HOST}
-    entrypoint: ["/bin/bash", "-c"]
+    container_name: $VALIDATOR3_HOST
+    restart: always
     command:
       - |
         BOOTSTRAP_NODE_ID=$$(cat /var/lib/rnode/bootstrap-node-id/node_id.txt)
@@ -167,42 +167,6 @@ services:
       - ./keys/bootstrap/node_id.txt:/var/lib/rnode/bootstrap-node-id/node_id.txt:ro
     depends_on:
       - boot
-
-  # =================================================================
-  # AUTOPROPOSE SERVICE - RChain-Inspired Continuous Block Proposing
-  # =================================================================
-  autopropose:
-    build: ./autopropose
-    container_name: autopropose
-    restart: unless-stopped
-    networks:
-      - f1r3fly
-    volumes:
-      # Configuration files
-      - ./autopropose/config.yml:/app/config.yml:ro
-      # Contract files for deployment
-      - ./resources:/contracts:ro
-      # Optional: logs directory
-      - ./logs:/var/log
-    environment:
-      - PYTHONUNBUFFERED=1
-      - TZ=UTC
-    # Wait for validators to be ready before starting autopropose
-    depends_on:
-      - boot
-      - validator1
-      - validator2
-      - validator3
-    # Health check to ensure service is running
-    healthcheck:
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8080/health', timeout=5)"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    # Optional: monitoring port (uncomment if monitoring enabled in config)
-    # ports:
-    #   - "8080:8080"
 
 networks:
   f1r3fly:
