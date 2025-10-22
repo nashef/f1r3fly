@@ -3,7 +3,13 @@ package coop.rchain.node.configuration.commandline
 import java.nio.file.Paths
 
 import scala.concurrent.duration._
-import coop.rchain.casper.{CasperConf, GenesisBlockData, GenesisCeremonyConf, RoundRobinDispatcher}
+import coop.rchain.casper.{
+  CasperConf,
+  GenesisBlockData,
+  GenesisCeremonyConf,
+  HeartbeatConf,
+  RoundRobinDispatcher
+}
 import coop.rchain.comm.{CommError, PeerNode}
 import coop.rchain.node.configuration.{
   ApiServer,
@@ -17,7 +23,13 @@ import coop.rchain.node.configuration.{
 }
 import com.typesafe.config.ConfigFactory
 import coop.rchain.casper.util.GenesisBuilder
-import coop.rchain.casper.{CasperConf, GenesisBlockData, GenesisCeremonyConf, RoundRobinDispatcher}
+import coop.rchain.casper.{
+  CasperConf,
+  GenesisBlockData,
+  GenesisCeremonyConf,
+  HeartbeatConf,
+  RoundRobinDispatcher
+}
 import coop.rchain.comm.transport.TlsConf
 import coop.rchain.comm.{CommError, PeerNode}
 import coop.rchain.node.configuration._
@@ -265,6 +277,11 @@ class ConfigMapperSpec extends FunSuite with Matchers {
           ceremonyMasterMode = true
         ),
         minPhloPrice = 1,
+        heartbeat = HeartbeatConf(
+          enabled = false,
+          checkInterval = 30.seconds,
+          maxLfbAge = 60.seconds
+        ),
         enableMergeableChannelGC = false,
         mergeableChannelsGCInterval = 5.minutes,
         mergeableChannelsGCDepthBuffer = 10

@@ -24,6 +24,7 @@ final case class CasperConf(
     genesisBlockData: GenesisBlockData,
     genesisCeremony: GenesisCeremonyConf,
     minPhloPrice: Long,
+    heartbeat: HeartbeatConf,
     enableMergeableChannelGC: Boolean,
     mergeableChannelsGCInterval: FiniteDuration,
     mergeableChannelsGCDepthBuffer: Int
@@ -57,4 +58,10 @@ final case class RoundRobinDispatcher(
     maxPeerQueueSize: Int,
     giveUpAfterSkipped: Int,
     dropPeerAfterRetries: Int
+)
+
+final case class HeartbeatConf(
+    enabled: Boolean,
+    checkInterval: FiniteDuration,
+    maxLfbAge: FiniteDuration
 )
