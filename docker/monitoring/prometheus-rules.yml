@@ -28,6 +28,45 @@ groups:
       - record: rchain:casper:block_processor:block_validation_time:p99
         expr: histogram_quantile(0.99, sum by (job, instance, le) (rate(rchain_casper_block_processor_block_validation_time_seconds_bucket[5m])))
 
+      # Block processing stage: validation-setup (getting CasperSnapshot)
+      - record: rchain:casper:block_processor:block_processing_stage_validation_setup_time:rate5m
+        expr: rate(rchain_casper_block_processor_block_processing_stage_validation_setup_time_seconds_count[5m])
+
+      - record: rchain:casper:block_processor:block_processing_stage_validation_setup_time:p50
+        expr: histogram_quantile(0.50, sum by (job, instance, le) (rate(rchain_casper_block_processor_block_processing_stage_validation_setup_time_seconds_bucket[5m])))
+
+      - record: rchain:casper:block_processor:block_processing_stage_validation_setup_time:p95
+        expr: histogram_quantile(0.95, sum by (job, instance, le) (rate(rchain_casper_block_processor_block_processing_stage_validation_setup_time_seconds_bucket[5m])))
+
+      - record: rchain:casper:block_processor:block_processing_stage_validation_setup_time:p99
+        expr: histogram_quantile(0.99, sum by (job, instance, le) (rate(rchain_casper_block_processor_block_processing_stage_validation_setup_time_seconds_bucket[5m])))
+
+      # Block processing stage: storage (BlockStore.put)
+      - record: rchain:casper:block_processor:block_processing_stage_storage_time:rate5m
+        expr: rate(rchain_casper_block_processor_block_processing_stage_storage_time_seconds_count[5m])
+
+      - record: rchain:casper:block_processor:block_processing_stage_storage_time:p50
+        expr: histogram_quantile(0.50, sum by (job, instance, le) (rate(rchain_casper_block_processor_block_processing_stage_storage_time_seconds_bucket[5m])))
+
+      - record: rchain:casper:block_processor:block_processing_stage_storage_time:p95
+        expr: histogram_quantile(0.95, sum by (job, instance, le) (rate(rchain_casper_block_processor_block_processing_stage_storage_time_seconds_bucket[5m])))
+
+      - record: rchain:casper:block_processor:block_processing_stage_storage_time:p99
+        expr: histogram_quantile(0.99, sum by (job, instance, le) (rate(rchain_casper_block_processor_block_processing_stage_storage_time_seconds_bucket[5m])))
+
+      # Block processing stage: replay (Rholang execution) - uses record() not timer()
+      - record: rchain:casper:casper:block_processing_stage_replay_time:rate5m
+        expr: rate(rchain_casper_casper_block_processing_stage_replay_time_count[5m])
+
+      - record: rchain:casper:casper:block_processing_stage_replay_time:p50
+        expr: histogram_quantile(0.50, sum by (job, instance, le) (rate(rchain_casper_casper_block_processing_stage_replay_time_bucket[5m])))
+
+      - record: rchain:casper:casper:block_processing_stage_replay_time:p95
+        expr: histogram_quantile(0.95, sum by (job, instance, le) (rate(rchain_casper_casper_block_processing_stage_replay_time_bucket[5m])))
+
+      - record: rchain:casper:casper:block_processing_stage_replay_time:p99
+        expr: histogram_quantile(0.99, sum by (job, instance, le) (rate(rchain_casper_casper_block_processing_stage_replay_time_bucket[5m])))
+
       # Block size aggregations
       - record: rchain:casper:block_processor:block_size:avg5m
         expr: sum by (job, instance) (rate(rchain_casper_block_processor_block_size_sum[5m])) / sum by (job, instance) (rate(rchain_casper_block_processor_block_size_count[5m]))

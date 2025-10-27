@@ -98,7 +98,12 @@ class BlockProcessor[F[_]: Concurrent: Metrics](
       s: Option[CasperSnapshot[F]] = None
   ): F[ValidBlockProcessing] =
     for {
-      casperSnapshot <- if (s.isDefined) s.get.pure[F] else getCasperSnapshot(c)
+      casperSnapshot <- if (s.isDefined) s.get.pure[F]
+                       else
+                         Metrics[F].timer(
+                           "block.processing.stage.validation-setup.time",
+                           getCasperSnapshot(c)
+                         )(metricsSource)
       // Time the validation and record block size
       blockSize = b.toProto.serializedSize.toLong
       _         <- Metrics[F].record("block.size", blockSize)(metricsSource)
@@ -139,7 +144,11 @@ object BlockProcessor {
 
     implicit val metricsSource: Source = Metrics.Source(CasperMetricsSource, "block-processor")
 
-    val storeBlock = (b: BlockMessage) => BlockStore[F].put(b)
+    val storeBlock = (b: BlockMessage) =>
+      Metrics[F].timer(
+        "block.processing.stage.storage.time",
+        BlockStore[F].put(b)
+      )(metricsSource)
 
     val getCasperStateSnapshot = (c: Casper[F]) => c.getSnapshot
 
