@@ -7,33 +7,33 @@ groups:
         expr: rate(rchain_casper_block_retriever_block_download_end_to_end_time_count[5m])
 
       - record: rchain:casper:block_retriever:block_download_end_to_end_time:p50
-        expr: histogram_quantile(0.50, rate(rchain_casper_block_retriever_block_download_end_to_end_time_bucket[5m]))
+        expr: histogram_quantile(0.50, sum by (job, instance, le) (rate(rchain_casper_block_retriever_block_download_end_to_end_time_bucket[5m])))
 
       - record: rchain:casper:block_retriever:block_download_end_to_end_time:p95
-        expr: histogram_quantile(0.95, rate(rchain_casper_block_retriever_block_download_end_to_end_time_bucket[5m]))
+        expr: histogram_quantile(0.95, sum by (job, instance, le) (rate(rchain_casper_block_retriever_block_download_end_to_end_time_bucket[5m])))
 
       - record: rchain:casper:block_retriever:block_download_end_to_end_time:p99
-        expr: histogram_quantile(0.99, rate(rchain_casper_block_retriever_block_download_end_to_end_time_bucket[5m]))
+        expr: histogram_quantile(0.99, sum by (job, instance, le) (rate(rchain_casper_block_retriever_block_download_end_to_end_time_bucket[5m])))
 
       # Block validation time aggregations (Kamon adds _seconds suffix)
       - record: rchain:casper:block_processor:block_validation_time:rate5m
         expr: rate(rchain_casper_block_processor_block_validation_time_seconds_count[5m])
 
       - record: rchain:casper:block_processor:block_validation_time:p50
-        expr: histogram_quantile(0.50, rate(rchain_casper_block_processor_block_validation_time_seconds_bucket[5m]))
+        expr: histogram_quantile(0.50, sum by (job, instance, le) (rate(rchain_casper_block_processor_block_validation_time_seconds_bucket[5m])))
 
       - record: rchain:casper:block_processor:block_validation_time:p95
-        expr: histogram_quantile(0.95, rate(rchain_casper_block_processor_block_validation_time_seconds_bucket[5m]))
+        expr: histogram_quantile(0.95, sum by (job, instance, le) (rate(rchain_casper_block_processor_block_validation_time_seconds_bucket[5m])))
 
       - record: rchain:casper:block_processor:block_validation_time:p99
-        expr: histogram_quantile(0.99, rate(rchain_casper_block_processor_block_validation_time_seconds_bucket[5m]))
+        expr: histogram_quantile(0.99, sum by (job, instance, le) (rate(rchain_casper_block_processor_block_validation_time_seconds_bucket[5m])))
 
       # Block size aggregations
       - record: rchain:casper:block_processor:block_size:avg5m
-        expr: rate(rchain_casper_block_processor_block_size_sum[5m]) / rate(rchain_casper_block_processor_block_size_count[5m])
+        expr: sum by (job, instance) (rate(rchain_casper_block_processor_block_size_sum[5m])) / sum by (job, instance) (rate(rchain_casper_block_processor_block_size_count[5m]))
 
       - record: rchain:casper:block_processor:block_size:p95
-        expr: histogram_quantile(0.95, rate(rchain_casper_block_processor_block_size_bucket[5m]))
+        expr: histogram_quantile(0.95, sum by (job, instance, le) (rate(rchain_casper_block_processor_block_size_bucket[5m])))
 
       # Block request rates (Kamon adds _total suffix to counters)
       - record: rchain:casper:block_retriever:block_requests_total:rate5m
@@ -56,7 +56,7 @@ groups:
 
       # Transport layer metrics aggregations (Kamon adds _seconds suffix to timers)
       - record: rchain:comm:rp:transport:send_time:p95
-        expr: histogram_quantile(0.95, rate(rchain_comm_rp_transport_send_time_seconds_bucket[5m]))
+        expr: histogram_quantile(0.95, sum by (job, instance, le) (rate(rchain_comm_rp_transport_send_time_seconds_bucket[5m])))
 
       - record: rchain:comm:rp:transport:packets_received:rate5m
         expr: rate(rchain_comm_rp_transport_packets_received_total[5m])

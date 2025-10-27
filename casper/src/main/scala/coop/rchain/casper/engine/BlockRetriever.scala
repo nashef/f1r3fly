@@ -73,8 +73,10 @@ object BlockRetriever {
   )
 
   final case class RequestState(
-      // Last time block was requested
+      // Last time block was requested (used for retry timing)
       timestamp: Long,
+      // Initial time when block hash was first received (used for end-to-end metrics)
+      initialTimestamp: Long,
       // Peers that were queried for this block
       peers: Set[PeerNode] = Set.empty,
       // If block has been received
@@ -134,6 +136,7 @@ object BlockRetriever {
           initState +
             (hash -> RequestState(
               timestamp = now,
+              initialTimestamp = now,
               waitingList = if (sourcePeer.isEmpty) None.toList else List(sourcePeer.get),
               received = markAsReceived
             ))
@@ -240,8 +243,8 @@ object BlockRetriever {
                            (AddedAsReceived, None)
                          )
                        case Some(requested) => {
-                         // Calculate download time
-                         val downloadTime = now - requested.timestamp
+                         // Calculate download time from initial request (not reset on retries)
+                         val downloadTime = now - requested.initialTimestamp
                          // Make Casper loop aware that the block has been received
                          (
                            state + (bh -> requested.copy(received = true)),
