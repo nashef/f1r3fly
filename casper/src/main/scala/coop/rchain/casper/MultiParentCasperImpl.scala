@@ -301,8 +301,16 @@ class MultiParentCasperImpl[F[_]
     ): EitherT[F, BlockError, (A, String)] =
       for {
         _ <- EitherT.liftF(Span[F].mark(s"before-$stepName"))
-        result <- EitherT(Stopwatch.duration(step).map {
-                   case (result, elapsed) => result.map(r => (r, elapsed))
+        result <- EitherT(Stopwatch.durationRaw(step).flatMap {
+                   case (eitherResult, elapsedDuration) =>
+                     val elapsed    = Stopwatch.showTime(elapsedDuration)
+                     val stepTimeMs = elapsedDuration.toMillis
+                     // Record metric for this validation step
+                     Metrics[F]
+                       .record(s"block.validation.step.$stepName.time", stepTimeMs)(
+                         Metrics.Source(CasperMetricsSource, "casper")
+                       )
+                       .as(eitherResult.map(r => (r, elapsed)))
                  })
         _ <- EitherT.liftF(Span[F].mark(s"after-$stepName"))
       } yield result
