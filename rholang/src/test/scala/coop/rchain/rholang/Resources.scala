@@ -8,13 +8,13 @@ import com.typesafe.scalalogging.Logger
 import coop.rchain.metrics.{Metrics, Span}
 import coop.rchain.models.{BindPattern, ListParWithRandom, Par, TaggedContinuation}
 import coop.rchain.rholang.externalservices.ExternalServices
-import coop.rchain.rholang.externalservices.NoOpExternalServices
 import coop.rchain.rholang.interpreter.RhoRuntime.{RhoHistoryRepository, RhoISpace}
 import coop.rchain.rholang.interpreter.SystemProcesses.Definition
 import coop.rchain.rholang.interpreter.{ReplayRhoRuntime, RhoRuntime, RholangCLI}
 import coop.rchain.rholang.externalservices.{
   GrpcClientService,
   NunetServiceMock,
+  ObserverExternalServices,
   OllamaServiceMock,
   OpenAIServiceMock,
   TestExternalServices
@@ -99,7 +99,7 @@ object Resources {
       stores: RSpaceStore[F],
       initRegistry: Boolean = false,
       additionalSystemProcesses: Seq[Definition[F]] = Seq.empty,
-      externalServices: ExternalServices = NoOpExternalServices
+      externalServices: ExternalServices = new ObserverExternalServices()
   )(
       implicit scheduler: Scheduler
   ): F[(RhoRuntime[F], ReplayRhoRuntime[F], RhoHistoryRepository[F])] = {

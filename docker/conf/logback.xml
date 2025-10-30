@@ -36,8 +36,11 @@
   <logger name="coop.rchain.rholang.externalservices" level="debug" /> 
 
   <logger name="org.http4s" level="warn" />
-  <logger name="io.netty" level="info" />
-  <logger name="io.grpc" level="info" />
+  <logger name="io.netty" level="debug" />
+  <logger name="io.grpc" level="debug" />
+  <logger name="io.grpc.netty" level="debug" />
+  <logger name="javax.net.ssl" level="debug" />
+  <logger name="sun.security.ssl" level="debug" />
   <logger name="sun" level="warn" />
   <logger name="org.http4s.blaze.channel.nio1.NIO1SocketServerGroup" level="debug" />
 

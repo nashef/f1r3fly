@@ -126,16 +126,58 @@ for node in "${tls_nodes[@]}"; do
     openssl pkcs8 -topk8 -nocrypt -in "$node_dir/node.key.ec.pem" -out "$node_dir/node.key.pem"
     rm "$node_dir/node.key.ec.pem"
 
-    # Generate self-signed certificate (valid 10 years)
-    echo "Generating self-signed X.509 certificate..."
+    # Generate temporary self-signed certificate (valid 10 years) to derive node ID
+    echo "Generating temporary self-signed X.509 certificate..."
     openssl req -new -x509 -key "$node_dir/node.key.pem" \
-        -out "$node_dir/node.certificate.pem" \
+        -out "$node_dir/node.certificate.tmp.pem" \
         -days 3650 -subj "/CN=f1r3fly-$node"
 
+    # Derive node ID from temporary certificate
+    echo "Deriving node ID from certificate..."
+    node_id=$($NODE_CLI get-node-id -c "$node_dir/node.certificate.tmp.pem" | grep -oE '[a-f0-9]{40}$' | tail -1)
+
+    if [[ -z "$node_id" ]]; then
+        echo "ERROR: Failed to derive node ID from certificate"
+        exit 1
+    fi
+
+    echo "Derived node ID: $node_id"
+
+    # Create config file for SAN extension
+    cat > "$node_dir/san.cnf" << EOF
+[req]
+distinguished_name = req_distinguished_name
+req_extensions = v3_req
+x509_extensions = v3_req
+
+[req_distinguished_name]
+
+[v3_req]
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = $node
+DNS.2 = rnode.$node
+DNS.3 = f1r3fly-$node
+DNS.4 = $node_id
+EOF
+
+    # Generate final certificate with SAN including node ID
+    echo "Generating final X.509 certificate with SAN..."
+    openssl req -new -x509 -key "$node_dir/node.key.pem" \
+        -out "$node_dir/node.certificate.pem" \
+        -days 3650 -subj "/CN=f1r3fly-$node" \
+        -config "$node_dir/san.cnf"
+
+    # Clean up temporary files
+    rm "$node_dir/node.certificate.tmp.pem" "$node_dir/san.cnf"
+
     echo ""
-    echo "✓ Generated TLS certificate for $node"
+    echo "✓ Generated TLS certificate for $node with SAN"
     echo "  Key:         $node_dir/node.key.pem"
     echo "  Certificate: $node_dir/node.certificate.pem"
+    echo "  Node ID:     $node_id"
+    echo "  SANs:        $node, rnode.$node, f1r3fly-$node, $node_id"
 done
 
 # ----------------------------------------------------------------------------

@@ -15,6 +15,7 @@ import coop.rchain.node.configuration.{
   ProtocolServer,
   Storage
 }
+import coop.rchain.rholang.externalservices.{NunetConf, OllamaConf, OpenAIConf}
 import com.typesafe.config.ConfigFactory
 import coop.rchain.casper.util.GenesisBuilder
 import coop.rchain.casper.{CasperConf, GenesisBlockData, GenesisCeremonyConf, RoundRobinDispatcher}
@@ -172,6 +173,15 @@ class ConfigMapperSpec extends FunSuite with Matchers {
           defaultModel = "llama4:latest",
           validateConnection = true,
           timeoutSec = 30
+        )
+      ), // defaults from config
+      nunet = Some(
+        NunetConf(
+          enabled = false,
+          cliPath = "nunet",
+          context = "user",
+          timeout = 600,
+          passphrase = ""
         )
       ), // defaults from config
       protocolClient = ProtocolClient(
