@@ -3,6 +3,7 @@ package coop.rchain.rholang.externalservices
 import cats.effect.Concurrent
 import cats.syntax.all._
 import com.typesafe.config.ConfigFactory
+import com.typesafe.scalalogging.Logger
 import scala.sys.process._
 import scala.concurrent.{ExecutionContext, Future}
 import java.io.{File, PrintWriter}
@@ -238,6 +239,8 @@ class DisabledNunetService extends NunetService {
 class NunetServiceImpl(config: NunetConf)(implicit ec: ExecutionContext) extends NunetService {
   import NunetServiceImpl._
 
+  private[this] val logger: Logger = Logger[this.type]
+
   // Use configuration provided via constructor
   private val cliPath    = config.cliPath
   private val context    = config.context
@@ -250,6 +253,7 @@ class NunetServiceImpl(config: NunetConf)(implicit ec: ExecutionContext) extends
   ): F[String] =
     F.async { cb =>
       Future {
+        logger.error(s"deployEnsemble called with timeout=$timeoutMinutes minutes")
         require(ensembleYaml.nonEmpty, "Ensemble YAML cannot be empty")
         require(timeoutMinutes > 0, "Timeout must be positive")
 
@@ -260,6 +264,7 @@ class NunetServiceImpl(config: NunetConf)(implicit ec: ExecutionContext) extends
         try {
           writer.write(ensembleYaml)
           writer.close()
+          logger.error(s"Wrote ensemble YAML to temp file: ${tempFile.getAbsolutePath}")
 
           // Execute deployment command
           val cmd = Seq(
@@ -275,15 +280,23 @@ class NunetServiceImpl(config: NunetConf)(implicit ec: ExecutionContext) extends
             s"${timeoutMinutes}m"
           )
 
-          val output     = executeCommand(cmd, timeout, passphrase)
+          logger.error(s"Executing command: ${cmd.mkString(" ")}")
+          val output = executeCommand(cmd, timeout, passphrase)
+          logger.error(s"Command output: $output")
           val ensembleId = parseEnsembleId(output)
+          logger.error(s"Parsed ensemble ID: $ensembleId")
 
           cb(Right(ensembleId))
+        } catch {
+          case e: Exception =>
+            logger.error(s"ERROR in deployEnsemble: ${e.getMessage}", e)
+            throw e
         } finally {
           tempFile.delete()
         }
       }.recover {
         case e: Exception =>
+          logger.error(s"Future.recover caught exception: ${e.getMessage}", e)
           cb(Left(e))
       }
     }
@@ -476,6 +489,8 @@ class NunetServiceImpl(config: NunetConf)(implicit ec: ExecutionContext) extends
   */
 object NunetServiceImpl {
 
+  private[this] val logger: Logger = Logger[this.type]
+
   /**
     * Singleton instance with enable/disable logic.
     *
@@ -515,24 +530,43 @@ object NunetServiceImpl {
     * @param passphrase DMS passphrase to set in DMS_PASSPHRASE environment variable
     */
   private def executeCommand(cmd: Seq[String], timeoutSeconds: Int, passphrase: String): String = {
+    logger.error(s"executeCommand - Starting command execution: ${cmd.mkString(" ")}")
+    logger.error(s"executeCommand - Timeout: $timeoutSeconds seconds")
+
     val stdout = new StringBuilder
     val stderr = new StringBuilder
 
-    val logger = ProcessLogger(
-      line => stdout.append(line + "\n"),
-      line => stderr.append(line + "\n")
+    val processLogger = ProcessLogger(
+      line => {
+        logger.error(s"executeCommand - STDOUT: $line")
+        stdout.append(line + "\n")
+      },
+      line => {
+        logger.error(s"executeCommand - STDERR: $line")
+        stderr.append(line + "\n")
+      }
     )
 
-    // Create process with DMS_PASSPHRASE environment variable
-    val processBuilder = Process(cmd, None, "DMS_PASSPHRASE" -> passphrase)
-    val exitCode       = processBuilder.!(logger)
+    try {
+      // Create process with DMS_PASSPHRASE environment variable
+      val processBuilder = Process(cmd, None, "DMS_PASSPHRASE" -> passphrase)
+      val exitCode       = processBuilder.!(processLogger)
 
-    if (exitCode == 0) {
-      stdout.toString.trim
-    } else {
-      throw new RuntimeException(
-        s"Command failed with exit code $exitCode: ${stderr.toString}"
-      )
+      logger.error(s"executeCommand - Process exit code: $exitCode")
+
+      if (exitCode == 0) {
+        val result = stdout.toString.trim
+        logger.error(s"executeCommand - SUCCESS - Returning stdout: $result")
+        result
+      } else {
+        val errorMsg = s"Command failed with exit code $exitCode: ${stderr.toString}"
+        logger.error(s"executeCommand - ERROR - $errorMsg")
+        throw new RuntimeException(errorMsg)
+      }
+    } catch {
+      case e: Exception =>
+        logger.error(s"executeCommand - EXCEPTION during command execution: ${e.getMessage}", e)
+        throw e
     }
   }
 

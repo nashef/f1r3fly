@@ -708,6 +708,7 @@ object SystemProcesses {
             _          <- produce(output, ack)
           } yield output).recoverWith {
             case e => // Deployment error
+              logger.error(s"nunetDeployEnsemble failed: ${e.getMessage}", e)
               NonDeterministicProcessFailure(outputNotProduced = Seq.empty, cause = e).raiseError
           }
         }
@@ -732,6 +733,10 @@ object SystemProcesses {
             _ <- produce(output, ack)
           } yield output).recoverWith {
             case e => // Status check error
+              logger.error(
+                s"nunetDeploymentStatus failed for ensemble $ensembleId: ${e.getMessage}",
+                e
+              )
               NonDeterministicProcessFailure(outputNotProduced = Seq.empty, cause = e).raiseError
           }
         }
@@ -762,6 +767,7 @@ object SystemProcesses {
             _ <- produce(output, ack)
           } yield output).recoverWith {
             case e => // List error
+              logger.error(s"nunetDeploymentList failed: ${e.getMessage}", e)
               NonDeterministicProcessFailure(outputNotProduced = Seq.empty, cause = e).raiseError
           }
         }
@@ -780,6 +786,10 @@ object SystemProcesses {
             _      <- produce(output, ack)
           } yield output).recoverWith {
             case e => // Logs error
+              logger.error(
+                s"nunetDeploymentLogs failed for ensemble $ensembleId: ${e.getMessage}",
+                e
+              )
               NonDeterministicProcessFailure(outputNotProduced = Seq.empty, cause = e).raiseError
           }
         }
@@ -811,6 +821,10 @@ object SystemProcesses {
             _ <- produce(output, ack)
           } yield output).recoverWith {
             case e => // Manifest error
+              logger.error(
+                s"nunetDeploymentManifest failed for ensemble $ensembleId: ${e.getMessage}",
+                e
+              )
               NonDeterministicProcessFailure(outputNotProduced = Seq.empty, cause = e).raiseError
           }
         }
@@ -853,6 +867,7 @@ object SystemProcesses {
             _      <- produce(output, ack)
           } yield output).recoverWith {
             case e => // Generation error
+              logger.error(s"nunetGenerateEnsemble failed: ${e.getMessage}", e)
               NonDeterministicProcessFailure(outputNotProduced = Seq.empty, cause = e).raiseError
           }
         }
@@ -876,6 +891,7 @@ object SystemProcesses {
             _ <- produce(output, ack)
           } yield output).recoverWith {
             case e => // Validation error
+              logger.error(s"nunetValidateEnsemble failed: ${e.getMessage}", e)
               NonDeterministicProcessFailure(outputNotProduced = Seq.empty, cause = e).raiseError
           }
         }
