@@ -118,33 +118,37 @@ class MultiParentCasperImpl[F[_]
   def lastFinalizedBlock: F[BlockMessage] = {
 
     /**
-      * Replay system contracts for a finalized block.
-      * This ensures that system contracts (like CloseBlockDeploy) are executed
-      * when blocks are finalized, not just when they're created or validated.
+      * Replay all deploys (user and system) for a finalized block.
+      * This ensures that user deploys (like REV transfers) and system contracts
+      * (like CloseBlockDeploy) are executed when blocks are finalized, not just
+      * when they're created or validated.
       */
     def replaySystemContractsOnFinalization(block: BlockMessage): F[Unit] = {
       implicit val metricsSource: Metrics.Source =
         Metrics.Source(CasperMetricsSource, "finalization-replay")
 
       val blockHashStr  = PrettyPrinter.buildString(block.blockHash)
+      val userDeploys   = ProtoUtil.deploys(block)
       val systemDeploys = ProtoUtil.systemDeploys(block)
+      val totalDeploys  = userDeploys.length + systemDeploys.length
 
-      if (systemDeploys.isEmpty) {
-        Log[F].debug(s"No system deploys to replay for finalized block $blockHashStr")
+      if (totalDeploys == 0) {
+        Log[F].debug(s"No deploys to replay for finalized block $blockHashStr")
       } else {
         for {
           _ <- Log[F].info(
-                s"Replaying ${systemDeploys.length} system contract(s) for finalized block $blockHashStr"
+                s"Replaying ${userDeploys.length} user deploy(s) and ${systemDeploys.length} " +
+                  s"system contract(s) for finalized block $blockHashStr"
               )
 
           preStateHash = ProtoUtil.preStateHash(block)
           blockData    = BlockData.fromBlock(block)
 
-          // Replay system deploys using the RuntimeManager's replayComputeState
-          // Pass empty user deploys since we only care about system contracts during finalization
+          // Replay ALL deploys (user + system) using the RuntimeManager's replayComputeState
+          // This ensures REV transfers and other user contracts execute during finalization
           replayResult <- RuntimeManager[F].replayComputeState(preStateHash)(
-                           Seq.empty[ProcessedDeploy], // No user deploys to replay
-                           systemDeploys,              // Only system deploys
+                           userDeploys,   // User deploys (REV transfers, etc.)
+                           systemDeploys, // System deploys (CloseBlockDeploy, etc.)
                            blockData,
                            Map.empty, // No invalid blocks needed for finalization replay
                            isGenesis = false
@@ -154,18 +158,18 @@ class MultiParentCasperImpl[F[_]
                 case Right(finalStateHash) =>
                   val stateHashStr = PrettyPrinter.buildString(finalStateHash)
                   Log[F].info(
-                    s"Successfully replayed system contracts for finalized block $blockHashStr, " +
+                    s"Successfully replayed ${totalDeploys} deploy(s) for finalized block $blockHashStr, " +
                       s"final state hash: $stateHashStr"
                   )
                 case Left(replayFailure) =>
                   Log[F].error(
-                    s"Failed to replay system contracts for finalized block $blockHashStr: $replayFailure"
+                    s"Failed to replay deploys for finalized block $blockHashStr: $replayFailure"
                   ) *>
                     Metrics[F].incrementCounter("casper.finalization.replay.errors")
               }
 
           _ <- Metrics[F]
-                .incrementCounter("casper.finalization.replay.count", systemDeploys.length.toLong)
+                .incrementCounter("casper.finalization.replay.count", totalDeploys.toLong)
         } yield ()
       }
     }
