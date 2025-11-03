@@ -143,12 +143,15 @@ sealed abstract class MultiParentCasperInstances {
       approvedBlock: BlockMessage
   )(implicit runtimeManager: RuntimeManager[F]): F[MultiParentCasper[F]] =
     for {
-      _ <- ().pure
+      // Create flag to track finalization status - block proposals fail fast if finalization is running
+      // This prevents validators from creating blocks with stale snapshots during finalization
+      finalizationInProgress <- cats.effect.concurrent.Ref[F].of(false)
     } yield {
       new MultiParentCasperImpl(
         validatorId,
         casperShardConf,
-        approvedBlock
+        approvedBlock,
+        finalizationInProgress
       )
     }
 }

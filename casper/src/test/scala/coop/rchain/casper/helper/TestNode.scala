@@ -159,10 +159,14 @@ case class TestNode[F[_]: Timer](
     mergeableChannelsGCDepthBuffer = 10
   )
 
+  // Create finalization flag for tracking finalization status
+  val finalizationInProgress = Ref[F].of(false).unsafeRunSync()
+
   implicit val casperEff = new MultiParentCasperImpl[F](
     validatorId,
     shardConf,
-    genesis
+    genesis,
+    finalizationInProgress
   )
 
   implicit val rspaceMan = RSpaceStateManagerTestImpl()
