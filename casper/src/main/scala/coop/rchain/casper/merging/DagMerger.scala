@@ -18,6 +18,10 @@ import scodec.bits.ByteVector
 
 object DagMerger {
 
+  // Deterministic ordering for DeployChainIndex to ensure consistent merge results across validators
+  implicit val deployChainIndexOrdering: Ordering[DeployChainIndex] =
+    Ordering.by(_.preStateHash)
+
   def costOptimalRejectionAlg: DeployChainIndex => Long =
     (r: DeployChainIndex) => r.deploysWithCost.map(_.cost).sum
 
@@ -37,15 +41,18 @@ object DagMerger {
       // blocks that does not see last finalized state
       lateBlocks = nonFinalisedBlocks diff actualBlocks
 
-      actualSet <- actualBlocks.toList.traverse(index).map(_.flatten.toSet)
+      // Convert to sorted lists to ensure deterministic iteration order
+      actualSet       <- actualBlocks.toList.traverse(index).map(_.flatten.toSet)
+      actualSetSorted = actualSet.toList.sorted
       // TODO reject only late units conflicting with finalised body
-      lateSet <- lateBlocks.toList.traverse(index).map(_.flatten.toSet)
+      lateSet       <- lateBlocks.toList.traverse(index).map(_.flatten.toSet)
+      lateSetSorted = lateSet.toList.sorted
 
       branchesAreConflicting = (as: Set[DeployChainIndex], bs: Set[DeployChainIndex]) =>
         (as.flatMap(_.deploysWithCost.map(_.id)) intersect bs.flatMap(_.deploysWithCost.map(_.id))).nonEmpty ||
           MergingLogic.areConflicting(
-            as.map(_.eventLogIndex).toList.combineAll,
-            bs.map(_.eventLogIndex).toList.combineAll
+            as.toList.sorted.map(_.eventLogIndex).combineAll,
+            bs.toList.sorted.map(_.eventLogIndex).combineAll
           )
       historyReader <- historyRepository.getHistoryReader(lfbPostState)
       baseReader    = historyReader.readerBinary
@@ -70,8 +77,8 @@ object DagMerger {
         historyRepository.reset(lfbPostState).flatMap(_.doCheckpoint(actions).map(_.root))
 
       r <- ConflictSetMerger.merge[F, DeployChainIndex](
-            actualSet = actualSet,
-            lateSet = lateSet,
+            actualSet = actualSetSorted.toSet,
+            lateSet = lateSetSorted.toSet,
             depends =
               (target, source) => MergingLogic.depends(target.eventLogIndex, source.eventLogIndex),
             conflicts = branchesAreConflicting,
@@ -85,5 +92,35 @@ object DagMerger {
 
       (newState, rejected) = r
       rejectedDeploys      = rejected.flatMap(_.deploysWithCost.map(_.id))
-    } yield (newState, rejectedDeploys.toList)
+      // Sort rejected deploys to ensure deterministic ordering using ByteVector
+      rejectedDeploysSorted = rejectedDeploys.toList.sorted(
+        Ordering.by((bs: ByteString) => ByteVector(bs.toByteArray))
+      )
+
+      // Log merge results for debugging
+      _ <- Log[F].debug(
+            s"""DagMerger.merge completed:
+            |  Non-finalized blocks: ${nonFinalisedBlocks.size}
+            |  Actual blocks (descendants of LFB): ${actualBlocks.size}
+            |  Late blocks (not seeing LFB): ${lateBlocks.size}
+            |  Actual deploy chains: ${actualSet.size}
+            |  Late deploy chains: ${lateSet.size}
+            |  Rejected deploy chains: ${rejected.size}
+            |  Total rejected deploys: ${rejectedDeploysSorted.size}
+            |  New state hash: ${ByteVector.view(newState.bytes.toArray).toHex.take(16)}...
+            |""".stripMargin
+          )
+      _ <- if (rejectedDeploysSorted.nonEmpty) {
+            import coop.rchain.casper.PrettyPrinter
+            Log[F].info(
+              s"""DagMerger rejected ${rejectedDeploysSorted.size} deploys:
+              |${rejectedDeploysSorted
+                   .map(bs => "  " + PrettyPrinter.buildString(bs))
+                   .mkString("\n")}
+              |""".stripMargin
+            )
+          } else {
+            ().pure[F]
+          }
+    } yield (newState, rejectedDeploysSorted)
 }
