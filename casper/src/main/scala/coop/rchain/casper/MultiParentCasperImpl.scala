@@ -19,7 +19,6 @@ import coop.rchain.casper.util._
 import coop.rchain.casper.util.comm.CommUtil
 import coop.rchain.casper.util.rholang._
 import coop.rchain.catscontrib.Catscontrib.ToBooleanF
-import coop.rchain.rholang.interpreter.SystemProcesses.BlockData
 import coop.rchain.crypto.signatures.Signed
 import coop.rchain.dag.DagOps
 import coop.rchain.metrics.implicits._
@@ -119,76 +118,16 @@ class MultiParentCasperImpl[F[_]
 
   def lastFinalizedBlock: F[BlockMessage] = {
 
-    /**
-      * Replay system contracts for a finalized block.
-      * This ensures that system contracts (like CloseBlockDeploy) are executed
-      * when blocks are finalized, not just when they're created or validated.
-      */
-    def replaySystemContractsOnFinalization(block: BlockMessage): F[Unit] = {
-      implicit val metricsSource: Metrics.Source =
-        Metrics.Source(CasperMetricsSource, "finalization-replay")
-
-      val blockHashStr  = PrettyPrinter.buildString(block.blockHash)
-      val systemDeploys = ProtoUtil.systemDeploys(block)
-
-      if (systemDeploys.isEmpty) {
-        Log[F].debug(s"No system deploys to replay for finalized block $blockHashStr")
-      } else {
-        for {
-          _ <- Log[F].info(
-                s"Replaying ${systemDeploys.length} system contract(s) for finalized block $blockHashStr"
-              )
-
-          preStateHash = ProtoUtil.preStateHash(block)
-          blockData    = BlockData.fromBlock(block)
-
-          // Replay system deploys using the RuntimeManager's replayComputeState
-          // Pass empty user deploys since we only care about system contracts during finalization
-          replayResult <- RuntimeManager[F].replayComputeState(preStateHash)(
-                           Seq.empty[ProcessedDeploy], // No user deploys to replay
-                           systemDeploys,              // Only system deploys
-                           blockData,
-                           Map.empty, // No invalid blocks needed for finalization replay
-                           isGenesis = false
-                         )
-
-          _ <- replayResult match {
-                case Right(finalStateHash) =>
-                  val stateHashStr = PrettyPrinter.buildString(finalStateHash)
-                  Log[F].info(
-                    s"Successfully replayed system contracts for finalized block $blockHashStr, " +
-                      s"final state hash: $stateHashStr"
-                  )
-                case Left(replayFailure) =>
-                  Log[F].error(
-                    s"Failed to replay system contracts for finalized block $blockHashStr: $replayFailure"
-                  ) *>
-                    Metrics[F].incrementCounter("casper.finalization.replay.errors")
-              }
-
-          _ <- Metrics[F]
-                .incrementCounter("casper.finalization.replay.count", systemDeploys.length.toLong)
-        } yield ()
-      }
-    }
-
     def processFinalised(finalizedSet: Set[BlockHash]): F[Unit] = {
       implicit val metricsSource: Metrics.Source = CasperMetricsSource
 
-      // Set flag to prevent concurrent block proposals during finalization replay
+      // Set flag to prevent concurrent block proposals during finalization
       for {
         _ <- finalizationInProgress.set(true)
         _ <- Log[F].debug(s"Finalization started for ${finalizedSet.size} blocks")
         _ <- finalizedSet.toList.traverse { h =>
               for {
-                block <- BlockStore[F].getUnsafe(h)
-
-                // Replay system contracts for finalized block (NEW)
-                // This ensures CloseBlockDeploy and other system contracts execute when blocks finalize
-                _ <- Span[F].traceI("finalization-replay") {
-                      replaySystemContractsOnFinalization(block)
-                    }
-
+                block   <- BlockStore[F].getUnsafe(h)
                 deploys = block.body.deploys.map(_.deploy)
 
                 // Remove block deploys from persistent store
