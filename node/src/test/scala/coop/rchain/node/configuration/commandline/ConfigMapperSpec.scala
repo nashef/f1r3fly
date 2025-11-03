@@ -277,6 +277,9 @@ class ConfigMapperSpec extends FunSuite with Matchers {
           ceremonyMasterMode = true
         ),
         minPhloPrice = 1,
+        enableMergeableChannelGC = false,
+        mergeableChannelsGCInterval = 5.minutes,
+        mergeableChannelsGCDepthBuffer = 10,
         heartbeat = HeartbeatConf(
           enabled = false,
           checkInterval = 30.seconds,
