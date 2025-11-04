@@ -113,48 +113,109 @@ object HeartbeatProposer {
           } else {
             // Validator is bonded, proceed with heartbeat check
             Log[F].debug("Heartbeat: Validator is bonded, checking LFB age") >>
-              checkLfbAndPropose(triggerPropose, casper, config)
+              checkLfbAndPropose(triggerPropose, validatorId, casper, config)
           }
     } yield ()
 
   private def checkLfbAndPropose[F[_]: Concurrent: Time: Log](
       triggerPropose: ProposeFunction[F],
+      validatorId: ByteString,
       casper: MultiParentCasper[F],
       config: HeartbeatConf
-  ): F[Unit] =
+  ): F[Unit] = {
+    import coop.rchain.models.BlockHash.BlockHash
+    import coop.rchain.dag.DagOps
+
     for {
+      // Get current snapshot
+      snapshot <- casper.getSnapshot
+
       // Get last finalized block
       lfb <- casper.lastFinalizedBlock
 
       // Check if LFB is stale
-      now           <- Time[F].currentMillis
-      lfbTimestamp  = lfb.header.timestamp
-      timeSinceLFB  = now - lfbTimestamp
-      shouldPropose = timeSinceLFB > config.maxLfbAge.toMillis
+      now          <- Time[F].currentMillis
+      lfbTimestamp = lfb.header.timestamp
+      timeSinceLFB = now - lfbTimestamp
+      lfbIsStale   = timeSinceLFB > config.maxLfbAge.toMillis
 
-      _ <- if (shouldPropose) {
-            for {
-              _ <- Log[F].info(
-                    s"Heartbeat: LFB is ${timeSinceLFB}ms old (threshold: ${config.maxLfbAge.toMillis}ms), triggering propose"
-                  )
-              // Trigger propose - this goes through the same queue as user proposes
-              // The ProposerInstance semaphore ensures thread safety
-              result <- triggerPropose(casper, false)
-              _ <- result match {
-                    case ProposerEmpty =>
-                      Log[F].debug("Heartbeat: Propose already in progress, will retry next check")
-                    case ProposerFailure(status, seqNum) =>
-                      Log[F].warn(s"Heartbeat: Propose failed with $status (seqNum $seqNum)")
-                    case ProposerSuccess(_, _) =>
-                      Log[F].info(
-                        s"Heartbeat: Successfully created block"
-                      )
-                    case ProposerStarted(seqNum) =>
-                      Log[F].info(s"Heartbeat: Async propose started (seqNum $seqNum)")
-                  }
-            } yield ()
+      // Check if we have new information to propose
+      // Get validator's last block and check if any new blocks have arrived
+      hasNewInfo <- snapshot.dag.latestMessageHash(validatorId).flatMap {
+                     case None =>
+                       // Validator has no blocks yet - can propose
+                       true.pure[F]
+                     case Some(lastBlockHash) =>
+                       // Check if this is genesis block (allows breaking deadlock after genesis)
+                       snapshot.dag.lookup(lastBlockHash).flatMap {
+                         case Some(blockMeta) if blockMeta.parents.isEmpty =>
+                           // This is genesis - allow proposal to break post-genesis deadlock
+                           Log[F].debug(
+                             "Heartbeat: Validator's last block is genesis, allowing proposal"
+                           ) >> true.pure[F]
+                         case _ =>
+                           // Get all blocks validator knew about when creating last block
+                           import coop.rchain.models.BlockHash.BlockHash
+                           import coop.rchain.dag.DagOps
+
+                           for {
+                             ancestorHashes <- DagOps
+                                                .bfTraverseF[F, BlockHash](
+                                                  List(lastBlockHash)
+                                                )(
+                                                  hash =>
+                                                    snapshot.dag
+                                                      .lookup(hash)
+                                                      .map(
+                                                        _.map(_.parents).getOrElse(List.empty)
+                                                      )
+                                                )
+                                                .toList
+                             ancestorSet = ancestorHashes.toSet
+
+                             // Get current latest blocks (frontier)
+                             allLatestBlocks <- snapshot.dag.latestMessageHashes
+
+                             // Check if any of the latest blocks are new (not in ancestor set)
+                             newBlocksExist = allLatestBlocks.values
+                               .exists(hash => !ancestorSet.contains(hash))
+                           } yield newBlocksExist
+                       }
+                   }
+
+      _ <- if (lfbIsStale) {
+            if (hasNewInfo) {
+              for {
+                _ <- Log[F].info(
+                      s"Heartbeat: LFB is ${timeSinceLFB}ms old (threshold: ${config.maxLfbAge.toMillis}ms), triggering propose"
+                    )
+                // Trigger propose - this goes through the same queue as user proposes
+                // The ProposerInstance semaphore ensures thread safety
+                result <- triggerPropose(casper, false)
+                _ <- result match {
+                      case ProposerEmpty =>
+                        Log[F].debug(
+                          "Heartbeat: Propose already in progress, will retry next check"
+                        )
+                      case ProposerFailure(status, seqNum) =>
+                        Log[F].warn(s"Heartbeat: Propose failed with $status (seqNum $seqNum)")
+                      case ProposerSuccess(_, _) =>
+                        Log[F].info(
+                          s"Heartbeat: Successfully created block"
+                        )
+                      case ProposerStarted(seqNum) =>
+                        Log[F].info(s"Heartbeat: Async propose started (seqNum $seqNum)")
+                    }
+              } yield ()
+            } else {
+              Log[F].error(
+                s"Heartbeat: LFB is stale (${timeSinceLFB}ms old) but no new blocks received. " +
+                  s"Cannot propose without new information. Network may be partitioned."
+              )
+            }
           } else {
             Log[F].debug(s"Heartbeat: LFB age is ${timeSinceLFB}ms, no action needed")
           }
     } yield ()
+  }
 }

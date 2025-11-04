@@ -157,7 +157,7 @@ object Validate {
   /*
    * TODO: Double check ordering of validity checks
    */
-  def blockSummary[F[_]: Sync: Log: Time: BlockStore: Metrics: Span: Estimator](
+  def blockSummary[F[_]: Sync: Log: Time: BlockStore: Metrics: Span](
       block: BlockMessage,
       genesis: BlockMessage,
       s: CasperSnapshot[F],
@@ -470,7 +470,16 @@ object Validate {
   /**
     * Works only with fully explicit justifications.
     */
-  def parents[F[_]: Sync: Log: BlockStore: Metrics: Span: Estimator](
+  /**
+    * Validates that a validator has made progress since their previous block.
+    *
+    * Rule: If validator V produced block B_prev, then V's next block B_new must have
+    * at least one parent that was not known to V when creating B_prev.
+    *
+    * This ensures validators only propose when they have received new information,
+    * preventing spam and ensuring network progress.
+    */
+  def parents[F[_]: Sync: Log: BlockStore: Metrics: Span](
       b: BlockMessage,
       genesis: BlockMessage,
       s: CasperSnapshot[F]
@@ -480,27 +489,58 @@ object Validate {
       case hashes if hashes.isEmpty => Seq(genesis.blockHash)
       case hashes                   => hashes
     }
+
+    val validator = b.sender
+
     for {
-      latestMessagesHashes <- ProtoUtil.toLatestMessageHashes(b.justifications).pure
-      tipHashes            <- Estimator[F].tips(s.dag, genesis, latestMessagesHashes)
-      computedParentHashes = tipHashes.tips
-      status <- if (parentHashes == computedParentHashes) {
-                 BlockStatus.valid.asRight[BlockError].pure
-               } else {
-                 val parentsString =
-                   parentHashes.map(hash => PrettyPrinter.buildString(hash)).mkString(",")
-                 val estimateString =
-                   computedParentHashes.map(hash => PrettyPrinter.buildString(hash)).mkString(",")
-                 val justificationString = latestMessagesHashes.values
-                   .map(hash => PrettyPrinter.buildString(hash))
-                   .mkString(",")
-                 val message =
-                   s"block parents ${parentsString} did not match estimate ${estimateString} based on justification ${justificationString}."
-                 for {
-                   _ <- Log[F].warn(
-                         ignore(b, message)
-                       )
-                 } yield BlockStatus.invalidParents.asLeft[ValidBlock]
+      // Get validator's previous block (if any)
+      prevBlockHashOpt <- s.dag.latestMessageHash(validator)
+
+      status <- prevBlockHashOpt match {
+                 // First block from this validator - always valid
+                 case None =>
+                   BlockStatus.valid.asRight[BlockError].pure
+
+                 // Validator has previous blocks - must show progress
+                 case Some(prevBlockHash) =>
+                   for {
+                     // Get ancestor closure of previous block (all blocks validator knew about)
+                     prevBlockMeta <- s.dag.lookup(prevBlockHash).map(_.get)
+
+                     // Special case: if previous block is genesis (no parents), allow proposal
+                     // This breaks the deadlock after genesis ceremony when all validators are at genesis
+                     isGenesis = prevBlockMeta.parents.isEmpty
+
+                     ancestorHashes <- DagOps
+                                        .bfTraverseF[F, BlockHash](List(prevBlockHash))(
+                                          hash =>
+                                            s.dag
+                                              .lookup(hash)
+                                              .map(_.map(_.parents).getOrElse(List.empty))
+                                        )
+                                        .toList
+                     ancestorSet = ancestorHashes.toSet
+
+                     // Check if at least one parent is new (not in ancestor closure)
+                     hasNewParent = parentHashes.exists(p => !ancestorSet.contains(p))
+
+                     result <- if (isGenesis || hasNewParent) {
+                                BlockStatus.valid.asRight[BlockError].pure
+                              } else {
+                                val parentsString =
+                                  parentHashes
+                                    .map(hash => PrettyPrinter.buildString(hash))
+                                    .mkString(",")
+                                val prevBlockString = PrettyPrinter.buildString(prevBlockHash)
+                                val message =
+                                  s"validator ${PrettyPrinter.buildString(validator)} has not made progress. " +
+                                    s"Block parents [${parentsString}] are all ancestors of previous block ${prevBlockString}. " +
+                                    s"Validator must receive new blocks before proposing."
+                                for {
+                                  _ <- Log[F].warn(ignore(b, message))
+                                } yield BlockStatus.invalidParents.asLeft[ValidBlock]
+                              }
+                   } yield result
                }
     } yield status
   }
