@@ -140,7 +140,8 @@ sealed abstract class MultiParentCasperInstances {
   def hashSetCasper[F[_]: Sync: Metrics: Concurrent: CommUtil: Log: Time: Timer: SafetyOracle: BlockStore: BlockDagStorage: Span: EventPublisher: SynchronyConstraintChecker: LastFinalizedHeightConstraintChecker: Estimator: DeployStorage: CasperBufferStorage: BlockRetriever](
       validatorId: Option[ValidatorIdentity],
       casperShardConf: CasperShardConf,
-      approvedBlock: BlockMessage
+      approvedBlock: BlockMessage,
+      heartbeatSignalRef: cats.effect.concurrent.Ref[F, Option[HeartbeatSignal[F]]]
   )(implicit runtimeManager: RuntimeManager[F]): F[MultiParentCasper[F]] =
     for {
       // Create flag to track finalization status - block proposals fail fast if finalization is running
@@ -151,7 +152,8 @@ sealed abstract class MultiParentCasperInstances {
         validatorId,
         casperShardConf,
         approvedBlock,
-        finalizationInProgress
+        finalizationInProgress,
+        heartbeatSignalRef
       )
     }
 }

@@ -162,11 +162,17 @@ case class TestNode[F[_]: Timer](
   // Create finalization flag for tracking finalization status
   val finalizationInProgress = Ref[F].of(false).unsafeRunSync()
 
+  // Create heartbeat signal ref for tests (empty since tests don't use heartbeat)
+  val heartbeatSignalRef = Ref[F]
+    .of(Option.empty[HeartbeatSignal[F]])
+    .unsafeRunSync()
+
   implicit val casperEff = new MultiParentCasperImpl[F](
     validatorId,
     shardConf,
     genesis,
-    finalizationInProgress
+    finalizationInProgress,
+    heartbeatSignalRef
   )
 
   implicit val rspaceMan = RSpaceStateManagerTestImpl()

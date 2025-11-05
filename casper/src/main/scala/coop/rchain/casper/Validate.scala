@@ -476,14 +476,29 @@ object Validate {
     * Rule: If validator V produced block B_prev, then V's next block B_new must have
     * at least one parent that was not known to V when creating B_prev.
     *
-    * This ensures validators only propose when they have received new information,
-    * preventing spam and ensuring network progress.
+    * Exception: Blocks containing user deploys are ALWAYS valid regardless of parent status.
+    * Users pay for their deploys, so validators must provide service immediately.
+    *
+    * This ensures validators only propose empty blocks when they have received new information,
+    * preventing spam while allowing immediate service for paying users.
     */
   def parents[F[_]: Sync: Log: BlockStore: Metrics: Span](
       b: BlockMessage,
       genesis: BlockMessage,
       s: CasperSnapshot[F]
   ): F[ValidBlockProcessing] = {
+    // Helper to detect system deploy IDs
+    // System deploy IDs are 33 bytes: [32-byte blockHash][1-byte marker]
+    // Markers: 0x01 (slash), 0x02 (close block), 0x03 (empty/heartbeat)
+    def isSystemDeployId(id: ByteString): Boolean =
+      id.size == 33 && {
+        val lastByte = id.byteAt(32)
+        lastByte == 1 || lastByte == 2 || lastByte == 3
+      }
+
+    // Check if block contains user deploys (non-system deploys)
+    val hasUserDeploys = b.body.deploys.exists(pd => !isSystemDeployId(pd.deploy.sig))
+
     val maybeParentHashes = ProtoUtil.parentHashes(b)
     val parentHashes = maybeParentHashes match {
       case hashes if hashes.isEmpty => Seq(genesis.blockHash)
@@ -501,7 +516,7 @@ object Validate {
                  case None =>
                    BlockStatus.valid.asRight[BlockError].pure
 
-                 // Validator has previous blocks - must show progress
+                 // Validator has previous blocks - check progress requirement
                  case Some(prevBlockHash) =>
                    for {
                      // Get ancestor closure of previous block (all blocks validator knew about)
@@ -524,7 +539,10 @@ object Validate {
                      // Check if at least one parent is new (not in ancestor closure)
                      hasNewParent = parentHashes.exists(p => !ancestorSet.contains(p))
 
-                     result <- if (isGenesis || hasNewParent) {
+                     // Validation logic:
+                     // - Blocks with user deploys: always valid (users are paying for service)
+                     // - Empty blocks: must have new parents (must show progress)
+                     result <- if (hasUserDeploys || isGenesis || hasNewParent) {
                                 BlockStatus.valid.asRight[BlockError].pure
                               } else {
                                 val parentsString =
@@ -534,8 +552,8 @@ object Validate {
                                 val prevBlockString = PrettyPrinter.buildString(prevBlockHash)
                                 val message =
                                   s"validator ${PrettyPrinter.buildString(validator)} has not made progress. " +
-                                    s"Block parents [${parentsString}] are all ancestors of previous block ${prevBlockString}. " +
-                                    s"Validator must receive new blocks before proposing."
+                                    s"Empty block parents [${parentsString}] are all ancestors of previous block ${prevBlockString}. " +
+                                    s"Validator must receive new blocks before proposing empty blocks."
                                 for {
                                   _ <- Log[F].warn(ignore(b, message))
                                 } yield BlockStatus.invalidParents.asLeft[ValidBlock]

@@ -46,7 +46,8 @@ class MultiParentCasperImpl[F[_]
     // todo this should be read from chain, for now read from startup options
     casperShardConf: CasperShardConf,
     approvedBlock: BlockMessage,
-    finalizationInProgress: Ref[F, Boolean]
+    finalizationInProgress: Ref[F, Boolean],
+    heartbeatSignalRef: Ref[F, Option[HeartbeatSignal[F]]]
 ) extends MultiParentCasper[F] {
   import MultiParentCasperImpl._
 
@@ -111,6 +112,14 @@ class MultiParentCasperImpl[F[_]
       _       <- DeployStorage[F].add(List(deploy))
       message = PrettyPrinter.buildString(deploy)
       _       <- Log[F].info(s"Received ${message.substring(0, math.min(message.length, 1000))}") // TODO: 1000? or less? or remove?
+      // Trigger heartbeat signal to propose block immediately with this deploy
+      _ <- heartbeatSignalRef.get.flatMap {
+            case Some(signal) =>
+              Log[F].debug("Triggering heartbeat wake for immediate block proposal") >>
+                signal.triggerWake()
+            case None =>
+              Log[F].debug("No heartbeat signal available (heartbeat may be disabled)")
+          }
     } yield deploy.sig
 
   def estimator(dag: BlockDagRepresentation[F]): F[IndexedSeq[BlockHash]] =
