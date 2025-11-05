@@ -360,7 +360,7 @@ object InterpreterUtil {
         case Seq() =>
           (RuntimeManager.emptyStateHashFixed, Seq.empty[ByteString]).pure[F]
 
-        // For single parent, get itd post state hash
+        // For single parent, get its post state hash
         case Seq(parent) =>
           (ProtoUtil.postStateHash(parent), Seq.empty[ByteString]).pure[F]
 
@@ -380,15 +380,11 @@ object InterpreterUtil {
 
                 mergeableChs <- runtimeManager.loadMergeableChannels(postState, sender, seqNum)
 
-                // TODO: System deploys should NOT be included when indexing parent blocks for merging.
-                // System deploys (CloseBlockDeploy, SlashDeploy, etc.) are block-specific and
-                // have IDs that include the block hash. Including them in the merge causes
-                // competing blocks at the same height to appear as having conflicting "deploys"
-                // (since their system deploy IDs differ), which is incorrect. System deploys
-                // already executed as part of their respective blocks and should not participate
-                // in multi-parent merge conflict resolution. Only user deploys can conflict.
-                // NOTE: Simply passing List.empty here doesn't work due to BlockIndex caching.
-                // Need to filter system deploys from rejected list after merge instead.
+                // KEEP system deploys in the index, but they will be filtered out during conflict
+                // detection in DagMerger. System deploys (CloseBlockDeploy, SlashDeploy, etc.) are
+                // block-specific and have IDs that include the block hash. They should NOT participate
+                // in multi-parent merge conflict resolution (only user deploys can conflict), but they
+                // need to be in the index so mergeable channels count matches deploy count.
                 blockIndex <- BlockIndex(
                                b.blockHash,
                                b.body.deploys,
