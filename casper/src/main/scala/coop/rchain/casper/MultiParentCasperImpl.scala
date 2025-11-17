@@ -557,6 +557,18 @@ object MultiParentCasperImpl {
     )
   }
 
+  def finalisedEvent(b: BlockMessage): RChainEvent = {
+    val (blockHash, parents, justifications, deploys, creator, seqNum) = blockEvent(b)
+    RChainEvent.blockFinalised(
+      blockHash,
+      parents,
+      justifications,
+      deploys,
+      creator,
+      seqNum
+    )
+  }
+
   private def blockEvent(block: BlockMessage) = {
 
     val blockHash = block.blockHash.toHexString
