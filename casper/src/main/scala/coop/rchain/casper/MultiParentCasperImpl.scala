@@ -408,20 +408,20 @@ class MultiParentCasperImpl[F[_]
     } yield ()
 
     val validationProcessDiag = for {
-      // Create block and measure duration
-      r                            <- Stopwatch.durationRaw(validationProcess.value)
-      (valResult, elapsedDuration) = r
-      elapsedStr                   = Stopwatch.showTime(elapsedDuration)
-      // Record replay time metric (convert FiniteDuration to milliseconds)
-      replayTimeMs = elapsedDuration.toMillis
-      _ <- Metrics[F].record("block.processing.stage.replay.time", replayTimeMs)(
-            Metrics.Source(CasperMetricsSource, "casper")
-          )
+      // Execute validation with accurate Kamon metric recording
+      // Note: Metrics[F].timer properly measures and records the metric without double-counting
+      // inner timing measurements that may exist in validationProcess
+      valResult <- Metrics[F].timer(
+                    "block.processing.stage.replay.time",
+                    validationProcess.value
+                  )(Metrics.Source(CasperMetricsSource, "casper"))
+
+      // Log validation result
       _ <- valResult
             .map { status =>
               val blockInfo   = PrettyPrinter.buildString(b, short = true)
               val deployCount = b.body.deploys.size
-              Log[F].info(s"Block replayed: $blockInfo (${deployCount}d) ($status) [$elapsedStr]") <*
+              Log[F].info(s"Block replayed: $blockInfo (${deployCount}d) ($status)") <*
                 indexBlock.whenA(casperShardConf.maxNumberOfParents > 1)
             }
             .getOrElse(().pure[F])

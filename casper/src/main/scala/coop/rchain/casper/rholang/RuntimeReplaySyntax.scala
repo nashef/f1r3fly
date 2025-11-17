@@ -305,14 +305,10 @@ final class RuntimeReplayOps[F[_]: Sync: Span: Log: Metrics](
         rigWithCheckTimed(
           processedSysDeploy,
           EitherT(
-            Stopwatch.durationRaw(replaySystemDeployInternal(slashDeploy, none).value).flatMap {
-              case (result, elapsed) =>
-                Metrics[F]
-                  .record("block.replay.sysdeploy.eval.time", elapsed.toMillis)(
-                    Metrics.Source(CasperMetricsSource, "casper")
-                  )
-                  .as(result)
-            }
+            Metrics[F].timer(
+              "block.replay.sysdeploy.eval.time",
+              replaySystemDeployInternal(slashDeploy, none).value
+            )(Metrics.Source(CasperMetricsSource, "casper"))
           ).semiflatMap {
             case (_, er) =>
               Stopwatch
@@ -337,16 +333,10 @@ final class RuntimeReplayOps[F[_]: Sync: Span: Log: Metrics](
         rigWithCheckTimed(
           processedSysDeploy,
           EitherT(
-            Stopwatch
-              .durationRaw(replaySystemDeployInternal(closeBlockDeploy, none).value)
-              .flatMap {
-                case (result, elapsed) =>
-                  Metrics[F]
-                    .record("block.replay.sysdeploy.eval.time", elapsed.toMillis)(
-                      Metrics.Source(CasperMetricsSource, "casper")
-                    )
-                    .as(result)
-              }
+            Metrics[F].timer(
+              "block.replay.sysdeploy.eval.time",
+              replaySystemDeployInternal(closeBlockDeploy, none).value
+            )(Metrics.Source(CasperMetricsSource, "casper"))
           ).semiflatMap {
             case (_, er) =>
               Stopwatch
@@ -441,14 +431,10 @@ final class RuntimeReplayOps[F[_]: Sync: Span: Log: Metrics](
       case r @ (_, evalRes) =>
         // Time checkReplayDataWithFix phase
         EitherT[F, ReplayFailure, Unit](
-          Stopwatch.durationRaw(checkReplayDataWithFix(evalRes.succeeded).value).flatMap {
-            case (result, elapsed) =>
-              Metrics[F]
-                .record("block.replay.sysdeploy.check.time", elapsed.toMillis)(
-                  Metrics.Source(CasperMetricsSource, "casper")
-                )
-                .as(result)
-          }
+          Metrics[F].timer(
+            "block.replay.sysdeploy.check.time",
+            checkReplayDataWithFix(evalRes.succeeded).value
+          )(Metrics.Source(CasperMetricsSource, "casper"))
         ).as(r)
     }
   }
