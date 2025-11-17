@@ -160,7 +160,7 @@ class MultiParentCasperImpl[F[_]
                       ().pure[F]
                     }
                 // Publish BlockFinalised event for each newly finalized block
-                _ <- EventPublisher[F].publish(RChainEvent.blockFinalised(h.toHexString))
+                _ <- EventPublisher[F].publish(finalisedEvent(block))
               } yield ()
             }
         _ <- finalizationInProgress.set(false)
