@@ -351,7 +351,14 @@ class MultiParentCasperImpl[F[_]
         result1 <- timedStep(
                     "block-summary",
                     Validate
-                      .blockSummary(b, approvedBlock, s, casperShardConf.shardName, deployLifespan)
+                      .blockSummary(
+                        b,
+                        approvedBlock,
+                        s,
+                        casperShardConf.shardName,
+                        deployLifespan,
+                        casperShardConf.maxNumberOfParents
+                      )
                   )
         t1 = result1._2
         _  <- EitherT.liftF(Span[F].mark("post-validation-block-summary"))

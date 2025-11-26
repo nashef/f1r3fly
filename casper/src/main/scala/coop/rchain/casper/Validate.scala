@@ -162,7 +162,8 @@ object Validate {
       genesis: BlockMessage,
       s: CasperSnapshot[F],
       shardId: String,
-      expirationThreshold: Int
+      expirationThreshold: Int,
+      maxNumberOfParents: Int = Estimator.UnlimitedParents
   ): F[ValidBlockProcessing] =
     (for {
       _ <- EitherT.liftF(Span[F].mark("before-block-hash-validation"))
@@ -184,7 +185,7 @@ object Validate {
       _ <- EitherT.liftF(Span[F].mark("before-justification-follows-validation"))
       _ <- EitherT(Validate.justificationFollows(block))
       _ <- EitherT.liftF(Span[F].mark("before-parents-validation"))
-      _ <- EitherT(Validate.parents(block, genesis, s))
+      _ <- EitherT(Validate.parents(block, genesis, s, maxNumberOfParents))
       _ <- EitherT.liftF(Span[F].mark("before-sequence-number-validation"))
       _ <- EitherT(Validate.sequenceNumber(block, s))
       _ <- EitherT.liftF(Span[F].mark("before-justification-regression-validation"))
@@ -485,7 +486,8 @@ object Validate {
   def parents[F[_]: Sync: Log: BlockStore: Metrics: Span](
       b: BlockMessage,
       genesis: BlockMessage,
-      s: CasperSnapshot[F]
+      s: CasperSnapshot[F],
+      maxNumberOfParents: Int = Estimator.UnlimitedParents
   ): F[ValidBlockProcessing] = {
     // Helper to detect system deploy IDs
     // System deploy IDs are 33 bytes: [32-byte blockHash][1-byte marker]
@@ -503,6 +505,14 @@ object Validate {
     val parentHashes = maybeParentHashes match {
       case hashes if hashes.isEmpty => Seq(genesis.blockHash)
       case hashes                   => hashes
+    }
+
+    // Check maxNumberOfParents constraint
+    if (maxNumberOfParents != Estimator.UnlimitedParents && parentHashes.size > maxNumberOfParents) {
+      val message =
+        s"block has ${parentHashes.size} parents, but maxNumberOfParents is $maxNumberOfParents"
+      return Log[F].warn(ignore(b, message)) >>
+        BlockStatus.invalidParents.asLeft[ValidBlock].pure[F]
     }
 
     val validator = b.sender
