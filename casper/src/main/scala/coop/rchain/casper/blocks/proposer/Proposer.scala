@@ -138,28 +138,38 @@ class Proposer[F[_]: Concurrent: Log: Span: EventPublisher](
     }
     for {
       // get snapshot to serve as a base for propose
-      s <- Stopwatch.time(Log[F].info(_))(s"getCasperSnapshot")(getCasperSnapshot(c))
-      result <- if (isAsync) for {
-                 nextSeq <- getValidatorNextSeqNumber(s).pure[F]
-                 _       <- proposeIdDef.complete(ProposerResult.started(nextSeq))
+      snapshotAttempt <- Stopwatch.time(Log[F].info(_))(s"getCasperSnapshot")(getCasperSnapshot(c)).attempt
+      result <- snapshotAttempt match {
+        case Left(FinalizationInProgressError()) =>
+          Log[F].warn(
+            "Block proposal abandoned: finalization in progress, will retry on next heartbeat"
+          ) >>
+            (ProposeResult.failure(InternalDeployError), none[BlockMessage]).pure[F]
+        case Left(error) =>
+          Concurrent[F].raiseError[(ProposeResult, Option[BlockMessage])](error)
+        case Right(s) =>
+          if (isAsync) for {
+                     nextSeq <- getValidatorNextSeqNumber(s).pure[F]
+                     _       <- proposeIdDef.complete(ProposerResult.started(nextSeq))
 
-                 // propose
-                 r <- doPropose(s, c)
-               } yield r
-               else
-                 for {
-                   // propose
-                   r <- doPropose(s, c)
+                     // propose
+                     r <- doPropose(s, c)
+                   } yield r
+                   else
+                     for {
+                       // propose
+                       r <- doPropose(s, c)
 
-                   (result, blockHashOpt) = r
-                   proposerResult = blockHashOpt.fold {
-                     val seqNumber = getValidatorNextSeqNumber(s)
-                     ProposerResult.failure(result.proposeStatus, seqNumber)
-                   } { block =>
-                     ProposerResult.success(result.proposeStatus, block)
-                   }
-                   _ <- proposeIdDef.complete(proposerResult)
-                 } yield r
+                       (result, blockHashOpt) = r
+                       proposerResult = blockHashOpt.fold {
+                         val seqNumber = getValidatorNextSeqNumber(s)
+                         ProposerResult.failure(result.proposeStatus, seqNumber)
+                       } { block =>
+                         ProposerResult.success(result.proposeStatus, block)
+                       }
+                       _ <- proposeIdDef.complete(proposerResult)
+                     } yield r
+      }
 
     } yield result
   }

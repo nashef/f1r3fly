@@ -227,6 +227,7 @@ class MultiParentCasperImpl[F[_]
 
   override def getSnapshot: F[CasperSnapshot[F]] = {
     import cats.instances.list._
+    import cats.syntax.applicative._
 
     def getOnChainState(b: BlockMessage): F[OnChainCasperState] =
       for {
@@ -236,17 +237,14 @@ class MultiParentCasperImpl[F[_]
         shardConfig = casperShardConf
       } yield OnChainCasperState(shardConfig, bm.map(v => v.validator -> v.stake).toMap, av)
 
-    // Check if finalization is in progress - fail fast if it is
+    // Check if finalization is in progress - abort gracefully if it is
     // Block proposals will retry later via heartbeat
-    for {
-      inProgress <- finalizationInProgress.get
-      _ <- if (inProgress) {
-            Log[F].debug("Finalization in progress, skipping snapshot creation") *>
-              Sync[F].raiseError(new Exception("Finalization in progress"))
-          } else {
-            ().pure[F]
-          }
-      dag         <- BlockDagStorage[F].getRepresentation
+    finalizationInProgress.get.flatMap { inProgress =>
+      if (inProgress) {
+        Sync[F].raiseError(FinalizationInProgressError())
+      } else {
+        for {
+          dag         <- BlockDagStorage[F].getRepresentation
       r           <- Estimator[F].tips(dag, approvedBlock)
       (lca, tips) = (r.lca, r.tips)
 

@@ -711,8 +711,95 @@ object Validate {
           BlockStatus.valid.asRight[BlockError].pure
         } else {
           for {
-            _ <- Log[F].warn(
-                  "Bonds in proof of stake contract do not match block's bond cache."
+            _ <- Log[F].error(
+                  s"""
+                    |╔════════════════════════════════════════════════════════════════════════════════╗
+                    |║                   BONDS CACHE MISMATCH DETECTED                               ║
+                    |╚════════════════════════════════════════════════════════════════════════════════╝
+                    |
+                    |Block Hash: ${PrettyPrinter.buildString(b.blockHash)}
+                    |Block Sender: ${PrettyPrinter.buildString(b.sender)}
+                    |Tuplespace Hash: ${PrettyPrinter.buildString(tuplespaceHash)}
+                    |
+                    |═══════════════════════════════════════════════════════════════════════════════════
+                    |CACHED BONDS (from block):
+                    |═══════════════════════════════════════════════════════════════════════════════════
+                    |Total cached bonds: ${bonds.size}
+                    |${bonds
+                       .map(b => s"  ${PrettyPrinter.buildString(b.validator)} => ${b.stake}")
+                       .mkString("\n")}
+                    |
+                    |═══════════════════════════════════════════════════════════════════════════════════
+                    |COMPUTED BONDS (from tuplespace):
+                    |═══════════════════════════════════════════════════════════════════════════════════
+                    |Total computed bonds: ${computedBonds.size}
+                    |${computedBonds
+                       .map(b => s"  ${PrettyPrinter.buildString(b.validator)} => ${b.stake}")
+                       .mkString("\n")}
+                    |
+                    |═══════════════════════════════════════════════════════════════════════════════════
+                    |DIFFERENCES:
+                    |═══════════════════════════════════════════════════════════════════════════════════
+                    |${
+                       val cachedSet   = bonds.map(b => (b.validator, b.stake)).toMap
+                       val computedSet = computedBonds.map(b => (b.validator, b.stake)).toMap
+
+                       val onlyInCached   = cachedSet.filterKeys(!computedSet.contains(_))
+                       val onlyInComputed = computedSet.filterKeys(!cachedSet.contains(_))
+                       val different = cachedSet.filter {
+                         case (v, s) =>
+                           computedSet.contains(v) && computedSet(v) != s
+                       }
+
+                       val diffs = scala.collection.mutable.ListBuffer[String]()
+
+                       if (onlyInCached.nonEmpty) {
+                         diffs += "Validators in CACHED but NOT in COMPUTED:"
+                         onlyInCached.foreach {
+                           case (v, s) =>
+                             diffs += s"  ${PrettyPrinter.buildString(v)} => ${s} (MISSING)"
+                         }
+                       }
+
+                       if (onlyInComputed.nonEmpty) {
+                         diffs += "Validators in COMPUTED but NOT in CACHED:"
+                         onlyInComputed.foreach {
+                           case (v, s) =>
+                             diffs += s"  ${PrettyPrinter.buildString(v)} => ${s} (EXTRA)"
+                         }
+                       }
+
+                       if (different.nonEmpty) {
+                         diffs += "Validators with DIFFERENT STAKES:"
+                         different.foreach {
+                           case (v, cachedStake) =>
+                             val computedStake = computedSet(v)
+                             diffs += s"  ${PrettyPrinter.buildString(v)}: cached=${cachedStake}, computed=${computedStake}"
+                         }
+                       }
+
+                       if (diffs.isEmpty) {
+                         diffs += "Sets are logically equal but comparison failed (unexpected)"
+                       }
+
+                       diffs.mkString("\n")
+                     }
+                    |
+                    |═══════════════════════════════════════════════════════════════════════════════════
+                    |BLOCK PARENTS:
+                    |═══════════════════════════════════════════════════════════════════════════════════
+                    |Main Parent: ${PrettyPrinter.buildString(
+                       b.justifications.headOption
+                         .map(_.latestBlockHash)
+                         .getOrElse(ByteString.EMPTY)
+                     )}
+                    |All Parents: ${b.justifications
+                       .map(j => PrettyPrinter.buildString(j.latestBlockHash))
+                       .mkString(", ")}
+                    |Parent Count: ${b.justifications.size}
+                    |
+                    |╚════════════════════════════════════════════════════════════════════════════════╝
+                    |""".stripMargin
                 )
           } yield BlockStatus.invalidBondsCache.asLeft[ValidBlock]
         }
