@@ -40,16 +40,24 @@ object DagMerger {
       scope: Option[Set[BlockHash]] = None
   ): F[(Blake2b256Hash, Seq[ByteString])] =
     for {
-      // all not finalized blocks (conflict set)
-      allNonFinalisedBlocks <- dag.nonFinalizedBlocks
-      // Apply scope filter if provided - only include blocks visible from this scope
-      nonFinalisedBlocks = scope.fold(allNonFinalisedBlocks)(allNonFinalisedBlocks.intersect)
-      // blocks that see last finalized state
+      // blocks that see last finalized state (descendants of LFB)
       allActualBlocks <- dag.descendants(lfb)
-      // Apply scope filter to actual blocks as well
+      // Apply scope filter to actual blocks
       actualBlocks = scope.fold(allActualBlocks)(allActualBlocks.intersect)
-      // blocks that does not see last finalized state
-      lateBlocks = nonFinalisedBlocks diff actualBlocks
+
+      // Late blocks: blocks in scope that are NOT descendants of LFB (and not the LFB itself)
+      // When scope is provided, compute late blocks from scope alone (deterministic).
+      // When no scope, fall back to querying nonFinalizedBlocks (legacy behavior).
+      lateBlocks <- scope match {
+                     case Some(scopeBlocks) =>
+                       // Deterministic: late blocks = scope - actualBlocks - LFB
+                       // We exclude the LFB because its state is the merge base
+                       ((scopeBlocks diff actualBlocks) - lfb).pure[F]
+                     case None =>
+                       // Legacy: query nonFinalizedBlocks (non-deterministic, but no scope means
+                       // this is not a multi-parent merge validation)
+                       dag.nonFinalizedBlocks.map(_ diff actualBlocks)
+                   }
 
       // Convert to sorted lists to ensure deterministic iteration order
       actualSet       <- actualBlocks.toList.traverse(index).map(_.flatten.toSet)
