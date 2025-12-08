@@ -115,77 +115,28 @@ object DagMerger {
       (newState, rejected) = r
       rejectedDeploys      = rejected.flatMap(_.deploysWithCost.map(_.id))
 
-      // Count system vs user deploy IDs in rejected set
-      systemDeployCount = rejectedDeploys.count(isSystemDeployId)
-      userDeployCount   = rejectedDeploys.size - systemDeployCount
-
-      // Log details of each rejected deploy BEFORE filtering
-      _ <- if (rejectedDeploys.nonEmpty) {
-            Log[F].info(
-              s"""DagMerger rejected ${rejectedDeploys.size} deploy IDs (${systemDeployCount} system, ${userDeployCount} user):
-              |${rejectedDeploys.zipWithIndex
-                   .map {
-                     case (id, idx) =>
-                       val hex      = ByteVector.view(id.toByteArray).toHex
-                       val len      = id.size
-                       val lastByte = if (len > 0) f"0x${id.byteAt(len - 1)}%02x" else "N/A"
-                       val isPossibleSystemId =
-                         len == 33 && (id.byteAt(32) == 1 || id.byteAt(32) == 2 || id
-                           .byteAt(32) == 3)
-                       val idType =
-                         if (isPossibleSystemId) s" [SYSTEM last_byte=$lastByte]" else " [USER]"
-                       f"  [$idx%3d] ${hex.take(16)}... (len=$len%2d)$idType"
-                   }
-                   .mkString("\n")}
-              |Note: System deploys are now excluded from conflict detection
-              |""".stripMargin
-            )
-          } else {
-            Log[F].debug("No deploys rejected by DagMerger")
-          }
-
       // Filter out system deploy IDs - they should not appear in block's rejected deploys
+      // System deploys are deterministic and excluded from conflict detection
       rejectedUserDeploys = rejectedDeploys.filterNot(isSystemDeployId)
-
-      _ <- if (rejectedDeploys.size != rejectedUserDeploys.size) {
-            Log[F].info(
-              s"Filtered out ${rejectedDeploys.size - rejectedUserDeploys.size} system deploy IDs from rejected set"
-            )
-          } else {
-            ().pure[F]
-          }
 
       // Sort rejected deploys to ensure deterministic ordering using ByteVector
       rejectedDeploysSorted = rejectedUserDeploys.toList.sorted(
         Ordering.by((bs: ByteString) => ByteVector(bs.toByteArray))
       )
 
-      // Log merge results for debugging
-      _ <- Log[F].info(
-            s"""DagMerger.merge completed:
-            |  LFB: ${ByteVector.view(lfb.toByteArray).toHex.take(16)}...
-            |  LFB post state: ${ByteVector.view(lfbPostState.bytes.toArray).toHex.take(16)}...
-            |  Scope: ${scope.fold("ALL")(s => s"${s.size} blocks")}
-            |  All non-finalized blocks: ${allNonFinalisedBlocks.size}
-            |  Scoped non-finalized blocks: ${nonFinalisedBlocks.size}
-            |  All actual blocks (descendants of LFB): ${allActualBlocks.size}
-            |  Scoped actual blocks: ${actualBlocks.size}
-            |  Late blocks (not seeing LFB): ${lateBlocks.size}
-            |  Actual deploy chains: ${actualSet.size}
-            |  Late deploy chains: ${lateSet.size}
-            |  Rejected deploy chains: ${rejected.size}
-            |  Total rejected deploys: ${rejectedDeploysSorted.size}
-            |  New state hash: ${ByteVector.view(newState.bytes.toArray).toHex.take(16)}...
-            |""".stripMargin
+      // Log merge summary at debug level
+      _ <- Log[F].debug(
+            s"DagMerger.merge: LFB=${ByteVector.view(lfb.toByteArray).toHex.take(16)}..., " +
+              s"scope=${scope.fold("ALL")(s => s"${s.size}")}, " +
+              s"actual=${actualBlocks.size}, late=${lateBlocks.size}, " +
+              s"rejected=${rejectedDeploysSorted.size}"
           )
+      // Log rejected deploys at info level only if there are any
       _ <- if (rejectedDeploysSorted.nonEmpty) {
             import coop.rchain.casper.PrettyPrinter
             Log[F].info(
-              s"""DagMerger rejected ${rejectedDeploysSorted.size} deploys:
-              |${rejectedDeploysSorted
-                   .map(bs => "  " + PrettyPrinter.buildString(bs))
-                   .mkString("\n")}
-              |""".stripMargin
+              s"DagMerger rejected ${rejectedDeploysSorted.size} deploys: " +
+                rejectedDeploysSorted.map(bs => PrettyPrinter.buildString(bs)).mkString(", ")
             )
           } else {
             ().pure[F]
