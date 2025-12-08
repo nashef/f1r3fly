@@ -18,10 +18,6 @@ import scodec.bits.ByteVector
 
 object DagMerger {
 
-  // Deterministic ordering for DeployChainIndex to ensure consistent merge results across validators
-  implicit val deployChainIndexOrdering: Ordering[DeployChainIndex] =
-    Ordering.by(_.preStateHash)
-
   def costOptimalRejectionAlg: DeployChainIndex => Long =
     (r: DeployChainIndex) => r.deploysWithCost.map(_.cost).sum
 
@@ -98,8 +94,8 @@ object DagMerger {
         historyRepository.reset(lfbPostState).flatMap(_.doCheckpoint(actions).map(_.root))
 
       r <- ConflictSetMerger.merge[F, DeployChainIndex](
-            actualSet = actualSetSorted.toSet,
-            lateSet = lateSetSorted.toSet,
+            actualSeq = actualSetSorted,
+            lateSeq = lateSetSorted,
             depends =
               (target, source) => MergingLogic.depends(target.eventLogIndex, source.eventLogIndex),
             conflicts = branchesAreConflicting,
