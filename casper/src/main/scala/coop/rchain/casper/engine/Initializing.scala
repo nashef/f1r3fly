@@ -161,12 +161,13 @@ class Initializing[F[_]
 
     for {
       // Request all blocks for Last Finalized State
+      // Uses exponential backoff: starts at 2s, doubles up to 128s max
       blockRequestStream <- LfsBlockRequester.stream(
                              approvedBlock,
                              blockMessageQueue,
                              minBlockNumberForDeployLifespan,
                              hash => CommUtil[F].broadcastRequestForBlock(hash, 1.some),
-                             requestTimeout = 30.seconds,
+                             requestTimeout = 2.seconds,
                              BlockStore[F].contains,
                              BlockStore[F].getUnsafe,
                              BlockStore[F].put,
@@ -174,6 +175,7 @@ class Initializing[F[_]
                            )
 
       // Request tuple space state for Last Finalized State
+      // Uses exponential backoff: starts at 2s, doubles up to 128s max
       stateValidator = RSpaceImporter.validateStateItems[F] _
       tupleSpaceStream <- LfsTupleSpaceRequester.stream(
                            approvedBlock,
@@ -182,7 +184,7 @@ class Initializing[F[_]
                              TransportLayer[F].sendToBootstrap(
                                StoreItemsMessageRequest(statePartPath, 0, pageSize).toProto
                              ),
-                           requestTimeout = 2.minutes,
+                           requestTimeout = 2.seconds,
                            RSpaceStateManager[F].importer,
                            stateValidator
                          )
