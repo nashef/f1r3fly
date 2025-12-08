@@ -36,13 +36,18 @@ object DagMerger {
       lfbPostState: Blake2b256Hash,
       index: BlockHash => F[Vector[DeployChainIndex]],
       historyRepository: RhoHistoryRepository[F],
-      rejectionCostF: DeployChainIndex => Long
+      rejectionCostF: DeployChainIndex => Long,
+      scope: Option[Set[BlockHash]] = None
   ): F[(Blake2b256Hash, Seq[ByteString])] =
     for {
       // all not finalized blocks (conflict set)
-      nonFinalisedBlocks <- dag.nonFinalizedBlocks
+      allNonFinalisedBlocks <- dag.nonFinalizedBlocks
+      // Apply scope filter if provided - only include blocks visible from this scope
+      nonFinalisedBlocks = scope.fold(allNonFinalisedBlocks)(allNonFinalisedBlocks.intersect)
       // blocks that see last finalized state
-      actualBlocks <- dag.descendants(lfb)
+      allActualBlocks <- dag.descendants(lfb)
+      // Apply scope filter to actual blocks as well
+      actualBlocks = scope.fold(allActualBlocks)(allActualBlocks.intersect)
       // blocks that does not see last finalized state
       lateBlocks = nonFinalisedBlocks diff actualBlocks
 
@@ -156,10 +161,15 @@ object DagMerger {
       )
 
       // Log merge results for debugging
-      _ <- Log[F].debug(
+      _ <- Log[F].info(
             s"""DagMerger.merge completed:
-            |  Non-finalized blocks: ${nonFinalisedBlocks.size}
-            |  Actual blocks (descendants of LFB): ${actualBlocks.size}
+            |  LFB: ${ByteVector.view(lfb.toByteArray).toHex.take(16)}...
+            |  LFB post state: ${ByteVector.view(lfbPostState.bytes.toArray).toHex.take(16)}...
+            |  Scope: ${scope.fold("ALL")(s => s"${s.size} blocks")}
+            |  All non-finalized blocks: ${allNonFinalisedBlocks.size}
+            |  Scoped non-finalized blocks: ${nonFinalisedBlocks.size}
+            |  All actual blocks (descendants of LFB): ${allActualBlocks.size}
+            |  Scoped actual blocks: ${actualBlocks.size}
             |  Late blocks (not seeing LFB): ${lateBlocks.size}
             |  Actual deploy chains: ${actualSet.size}
             |  Late deploy chains: ${lateSet.size}

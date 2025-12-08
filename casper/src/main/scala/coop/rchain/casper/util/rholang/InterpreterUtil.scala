@@ -397,18 +397,53 @@ object InterpreterUtil {
               } yield blockIndex
             }
           }
+
+          // Compute scope: all ancestors of parents (blocks visible from these parents)
+          // This ensures DagMerger only considers blocks that were visible when computing
+          // pre-state, preventing state contamination from blocks created after this block.
+          val parentHashes = parents.map(_.blockHash)
+
           for {
-            lfbState <- BlockStore[F]
-                         .getUnsafe(s.lastFinalizedBlock)
-                         .map(_.body.state.postStateHash)
-                         .map(Blake2b256Hash.fromByteString)
+            // Get all ancestors of all parents (including the parents themselves)
+            ancestorSets  <- parentHashes.toList.traverse(s.dag.allAncestors)
+            visibleBlocks = ancestorSets.flatten.toSet
+
+            // Find the highest finalized block that is an ancestor of ALL parents.
+            // This ensures deterministic LFB regardless of when validation happens,
+            // since finalization is monotonic (once finalized, always finalized).
+            finalizedInScope <- visibleBlocks.toList.filterA(s.dag.isFinalized)
+            finalizedWithHeight <- finalizedInScope.traverse { h =>
+                                    s.dag.lookupUnsafe(h).map(m => (h, m.blockNum))
+                                  }
+            // Select highest finalized block by block number, fall back to snapshot LFB
+            scopedLfb: BlockHash = if (finalizedWithHeight.nonEmpty)
+              finalizedWithHeight.maxBy(_._2)._1
+            else
+              s.lastFinalizedBlock
+
+            lfbBlock <- BlockStore[F].getUnsafe(scopedLfb)
+            lfbState = Blake2b256Hash.fromByteString(lfbBlock.body.state.postStateHash)
+
+            _ <- Log[F].info(
+                  s"""computeParentsPostState scope computation:
+                  |  Parent hashes: ${parentHashes
+                       .map(h => PrettyPrinter.buildString(h))
+                       .mkString(", ")}
+                  |  Snapshot LFB: ${PrettyPrinter.buildString(s.lastFinalizedBlock)}
+                  |  Scoped LFB: ${PrettyPrinter.buildString(scopedLfb)}
+                  |  Visible blocks (scope size): ${visibleBlocks.size}
+                  |  Finalized in scope: ${finalizedInScope.size}
+                  |""".stripMargin
+                )
+
             r <- DagMerger.merge[F](
                   s.dag,
-                  s.lastFinalizedBlock,
+                  scopedLfb,
                   lfbState,
                   blockIndexF(_).map(_.deployChains),
                   runtimeManager.getHistoryRepo,
-                  DagMerger.costOptimalRejectionAlg
+                  DagMerger.costOptimalRejectionAlg,
+                  Some(visibleBlocks)
                 )
             (state, rejected) = r
           } yield (ByteString.copyFrom(state.bytes.toArray), rejected)
