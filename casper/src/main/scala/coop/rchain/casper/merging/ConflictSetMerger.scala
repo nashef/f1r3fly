@@ -152,10 +152,11 @@ object ConflictSetMerger {
     val rejectionTargetF = (dc: Branch) => dc.map(cost).sum
 
     for {
+      // Sort keys for deterministic ordering across JVM instances
       baseMergeableChRes <- branches.flatten
-                             .map(mergeableChannels)
-                             .flatMap(_.keys)
-                             .toList
+                             .flatMap(mergeableChannels(_).keys)
+                             .toVector
+                             .sorted
                              .traverse(
                                channelHash =>
                                  convertToReadNumber(getData)
