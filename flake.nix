@@ -3,13 +3,17 @@
     typelevel-nix.url = "github:typelevel/typelevel-nix";
     nixpkgs.follows = "typelevel-nix/nixpkgs";
     oldNixpkgs.url = "github:NixOS/nixpkgs/nixos-23.05";
+    # Newer nixpkgs for Docker 28.x compatibility
+    newNixpkgs.url = "github:NixOS/nixpkgs/nixos-24.11";
     flake-utils.follows = "typelevel-nix/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
   };
 
-  outputs = { self, nixpkgs, oldNixpkgs, flake-utils, typelevel-nix, rust-overlay }:
+  outputs = { self, nixpkgs, oldNixpkgs, newNixpkgs, flake-utils, typelevel-nix, rust-overlay }:
     flake-utils.lib.eachDefaultSystem (system:
       let
+        # Import newer nixpkgs for Docker
+        newPkgs = import newNixpkgs { inherit system; };
         graalOverlay = final: prev: rec {
           holyGraal = final.jdk17;
           jdk = holyGraal;
@@ -37,7 +41,7 @@
           commands = [
             {
               name = "docker";
-              package = docker;
+              package = newPkgs.docker;
             }
             {
               name = "cargo";
@@ -102,6 +106,26 @@
               name = "helm";
               package = kubernetes-helm;
               help = "Helm is a tool that streamlines installing and managing Kubernetes applications";
+            }
+            {
+              name = "python3";
+              package = python310;
+              help = "Python 3.10 interpreter";
+            }
+            {
+              name = "pipenv";
+              package = pipenv;
+              help = "Python dependency management tool";
+            }
+          ];
+          packages = [
+            # Required for Python packages with native extensions (grpcio, etc.)
+            stdenv.cc.cc.lib
+          ];
+          env = [
+            {
+              name = "LD_LIBRARY_PATH";
+              value = "${stdenv.cc.cc.lib}/lib";
             }
           ];
           imports = [ typelevel-nix.typelevelShell ];

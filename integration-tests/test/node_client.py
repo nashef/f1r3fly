@@ -6,12 +6,13 @@ from typing import Generator, Iterator
 from pathlib import Path
 import grpc
 from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.backends.openssl.ec import _EllipticCurvePrivateKey
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
+from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePrivateKey
 from eth_hash.auto import keccak
-from rchain.pb import CasperMessage_pb2
-from rchain.pb.CasperMessage_pb2 import BlockMessageProto as BlockMessage, BlockRequestProto as BlockRequest
-from rchain.pb.routing_pb2 import (
+from f1r3fly.pb import CasperMessage_pb2
+from f1r3fly.pb.CasperMessage_pb2 import BlockMessageProto as BlockMessage, BlockRequestProto as BlockRequest  # pylint: disable=no-name-in-module
+# pylint: disable=no-name-in-module
+from f1r3fly.pb.routing_pb2 import (
     Chunk,
     Header,
     Node,
@@ -21,7 +22,7 @@ from rchain.pb.routing_pb2 import (
     TLRequest,
     TLResponse
 )
-from rchain.pb.routing_pb2_grpc import (
+from f1r3fly.pb.routing_pb2_grpc import (
     TransportLayerServicer,
     TransportLayerStub,
     add_TransportLayerServicer_to_server
@@ -45,13 +46,13 @@ class BlockNotFound(Exception):
         self.rnode = rnode
 
 
-def get_node_id_raw(key: _EllipticCurvePrivateKey) -> bytes:
+def get_node_id_raw(key: EllipticCurvePrivateKey) -> bytes:
     curve = key.public_key().public_numbers()
     pk_bytes = curve.x.to_bytes(32, 'big') + curve.y.to_bytes(32, 'big')
     return keccak(pk_bytes)[12:]
 
 
-def get_node_id_str(key: _EllipticCurvePrivateKey) -> str:
+def get_node_id_str(key: EllipticCurvePrivateKey) -> str:
     raw_id = get_node_id_raw(key)
     return raw_id.hex()
 
@@ -87,11 +88,12 @@ class TransportServer(TransportLayerServicer):
 
 
 class NodeClient:
-    def __init__(self, node_pem_cert: bytes, node_pem_key: bytes, host: str, network_name: str, receive_timeout: int,
+    def __init__(self, node_pem_cert: bytes, node_pem_key: bytes, host: str, network_name: str, receive_timeout: int,  # pylint: disable=too-many-positional-arguments
                  network_id: str = DEFAULT_NETWORK_ID):
         self.node_pem_cert = node_pem_cert
         self.node_pem_key = node_pem_key
         self.ec_key = load_pem_private_key(self.node_pem_key, password=None, backend=default_backend())
+        assert isinstance(self.ec_key, EllipticCurvePrivateKey)
         self.network_id = network_id
 
         self.host = host
@@ -106,6 +108,7 @@ class NodeClient:
 
     @property
     def node_pb(self) -> Node:
+        assert isinstance(self.ec_key, EllipticCurvePrivateKey)
         node_id = get_node_id_raw(self.ec_key)
         return Node(id=node_id, host=self.host.encode('utf8'), tcp_port=self.tcp_port, udp_port=self.udp_port)
 
@@ -139,11 +142,13 @@ class NodeClient:
         credential = grpc.ssl_channel_credentials(rnode.get_node_pem_cert(), self.node_pem_key, self.node_pem_cert)
         # only linux system can connect to the docker container through the container name
         rnode_ip = self.get_peer_node_ip(rnode)
+        rnode_key = load_pem_private_key(rnode.get_node_pem_key(), None, default_backend())
+        assert isinstance(rnode_key, EllipticCurvePrivateKey)
         channel = grpc.secure_channel(
             f"{rnode_ip}:{DEFAULT_TRANSPORT_SERVER_PORT}",
             credential,
             options=(('grpc.ssl_target_name_override',
-                      get_node_id_str(load_pem_private_key(rnode.get_node_pem_key(), None, default_backend()))),)
+                      get_node_id_str(rnode_key)),)
         )
         try:
             stub = TransportLayerStub(channel)

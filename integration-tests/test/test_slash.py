@@ -4,14 +4,14 @@ import sys
 import time
 from pathlib import Path
 from random import Random
-from typing import Generator, Tuple, Dict
+from typing import Generator, Tuple, Dict, Optional
 from contextlib import contextmanager
 import logging
 import pytest
 from docker.client import DockerClient
-from rchain.crypto import PrivateKey, gen_block_hash_from_block
-from rchain.pb.CasperMessage_pb2 import BlockMessageProto as BlockMessage, JustificationProto as Justification
-from rchain.util import create_deploy_data
+from f1r3fly.crypto import PrivateKey, gen_block_hash_from_block
+from f1r3fly.pb.CasperMessage_pb2 import BlockMessageProto as BlockMessage, JustificationProto as Justification  # pylint: disable=no-name-in-module
+from f1r3fly.util import create_deploy_data
 
 
 from . import conftest
@@ -45,7 +45,7 @@ def is_exist_slash_deploy(block: BlockMessage) -> bool:
     return exist_slash_deploy
 
 @contextmanager
-def three_nodes_network_with_node_client(command_line_options: CommandLineOptions, random_generator: Random, docker_client: DockerClient, validator_bonds_dict: Dict[PrivateKey, int] = None) -> Generator[Tuple[TestingContext, Node, Node, Node, NodeClient], None, None]:
+def three_nodes_network_with_node_client(command_line_options: CommandLineOptions, random_generator: Random, docker_client: DockerClient, validator_bonds_dict: Optional[Dict[PrivateKey, int]] = None) -> Generator[Tuple[TestingContext, Node, Node, Node, NodeClient], None, None]:  # pylint: disable=contextmanager-generator-missing-cleanup
     peers_keypairs = [BONDED_VALIDATOR_KEY_1, BONDED_VALIDATOR_KEY_2]
     wallet_map = {
         BOOTSTRAP_NODE_KEY: 10000,
@@ -53,6 +53,7 @@ def three_nodes_network_with_node_client(command_line_options: CommandLineOption
         BONDED_VALIDATOR_KEY_2: 10000,
         BONDED_VALIDATOR_KEY_3: 10000
     }
+    # pylint: disable=contextmanager-generator-missing-cleanup
     with conftest.testing_context(command_line_options, random_generator, docker_client, bootstrap_key=BOOTSTRAP_NODE_KEY, peers_keys=peers_keypairs, validator_bonds_dict=validator_bonds_dict, wallets_dict=wallet_map) as context, \
         ready_bootstrap_with_network(context=context) as bootstrap_node, \
         bootstrap_connected_peer(context=context, bootstrap=bootstrap_node, name='bonded-validator-1', private_key=BONDED_VALIDATOR_KEY_1) as validator1, \
@@ -367,7 +368,7 @@ def test_slash_GHOST_disobeyed(command_line_options: CommandLineOptions, random_
         invalid_block.body.state.blockNumber = 2  # pylint: disable=maybe-no-member
         invalid_block.header.parentsHashList.append(bytes.fromhex(block_info1.blockInfo.blockHash))  # pylint: disable=maybe-no-member
         invalid_block.header.timestamp = int(time.time()*1000)  # pylint: disable=maybe-no-member
-        deploy_data = create_deploy_data(BONDED_VALIDATOR_KEY_2, Path("../rholang/examples/tut-hello.rho").read_text(encoding='utf-8'), 1, 1000000, shard_id='test')
+        deploy_data = create_deploy_data(BONDED_VALIDATOR_KEY_2, Path("../rholang/examples/tut-hello.rho").read_text(encoding='utf-8'), 1, 1000000, shard_id='test')  # pylint: disable=unexpected-keyword-arg
         invalid_block.body.deploys[0].deploy.CopyFrom(deploy_data)  # pylint: disable=maybe-no-member
         invalid_block_hash = gen_block_hash_from_block(invalid_block)
         invalid_block.sig = BONDED_VALIDATOR_KEY_1.sign_block_hash(invalid_block_hash)

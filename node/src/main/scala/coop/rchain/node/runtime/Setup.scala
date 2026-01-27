@@ -261,6 +261,30 @@ object Setup {
 
       proposerStateRefOpt <- triggerProposeFOpt.traverse(_ => Ref.of(ProposerState[F]()))
 
+      // Create transaction API infrastructure early so it can be used by casperLaunch callback
+      reportingStore <- ReportStore.store[F](rnodeStoreManager)
+      blockReportAPI = {
+        implicit val (ec, bs, or) = (engineCell, blockStore, oracle)
+        BlockReportAPI[F](reportingRuntime, reportingStore, conf.devMode)
+      }
+      transactionAPI = Transaction[F](
+        blockReportAPI,
+        Par(unforgeables = Seq(Transaction.transferUnforgeable))
+      )
+      cacheTransactionAPI <- Transaction.cacheTransactionAPI(transactionAPI, rnodeStoreManager)
+
+      // Callback invoked when blocks are finalized - triggers transfer extraction and caching
+      onBlockFinalized = (blockHash: String) =>
+        Concurrent[F]
+          .start(
+            cacheTransactionAPI.getTransaction(blockHash).attempt.flatMap {
+              case Left(err) =>
+                Log[F].warn(s"Failed to extract transfers for block $blockHash: ${err.getMessage}")
+              case Right(_) => Concurrent[F].unit
+            }
+          )
+          .void
+
       casperLaunch = {
         implicit val (bs, bd, ds)         = (blockStore, blockDagStorage, deployStorage)
         implicit val (br, cb, ep)         = (blockRetriever, casperBufferStorage, eventPublisher)
@@ -274,7 +298,9 @@ object Setup {
           if (conf.autopropose) triggerProposeFOpt else none[ProposeFunction[F]],
           conf.casper,
           !conf.protocolClient.disableLfs,
-          conf.protocolServer.disableStateExporter
+          conf.protocolServer.disableStateExporter,
+          onBlockFinalized,
+          conf.standalone
         )
       }
       packetHandler = {
@@ -292,11 +318,6 @@ object Setup {
           conf.roundRobinDispatcher.dropPeerAfterRetries
         )
       }*/
-      reportingStore <- ReportStore.store[F](rnodeStoreManager)
-      blockReportAPI = {
-        implicit val (ec, bs, or) = (engineCell, blockStore, oracle)
-        BlockReportAPI[F](reportingRuntime, reportingStore)
-      }
       apiServers = {
         implicit val (ec, bs, or, sp) = (engineCell, blockStore, oracle, span)
         implicit val (sc, lh)         = (synchronyConstraintChecker, lastFinalizedHeightConstraintChecker)
@@ -312,6 +333,8 @@ object Setup {
           if (conf.autopropose && conf.dev.deployerPrivateKey.isDefined) triggerProposeFOpt
           else none[ProposeFunction[F]],
           blockReportAPI,
+          cacheTransactionAPI,
+          cacheTransactionAPI.store,
           conf.protocolServer.networkId,
           conf.casper.shardName,
           conf.casper.minPhloPrice,
@@ -365,7 +388,9 @@ object Setup {
           conf.casper.genesisBlockData.quarantineLength,
           conf.casper.minPhloPrice,
           conf.casper.enableMergeableChannelGC,
-          conf.casper.mergeableChannelsGCDepthBuffer
+          conf.casper.mergeableChannelsGCDepthBuffer,
+          conf.casper.disableLateBlockFiltering,
+          conf.standalone // Disable validator progress check in standalone mode
         )
         for {
           _ <- if (conf.casper.enableMergeableChannelGC) {
@@ -387,11 +412,6 @@ object Setup {
       runtimeCleanup = NodeRuntime.cleanup(
         rnodeStoreManager
       )
-      transactionAPI = Transaction[F](
-        blockReportAPI,
-        Par(unforgeables = Seq(Transaction.transferUnforgeable))
-      )
-      cacheTransactionAPI <- Transaction.cacheTransactionAPI(transactionAPI, rnodeStoreManager)
       webApi = {
         implicit val (ec, bs, or, sp) = (engineCell, blockStore, oracle, span)
         implicit val (ra, rc)         = (rpConfAsk, rpConnections)
@@ -401,6 +421,7 @@ object Setup {
           conf.apiServer.maxBlocksLimit,
           conf.devMode,
           cacheTransactionAPI,
+          cacheTransactionAPI.store,
           if (conf.autopropose && conf.dev.deployerPrivateKey.isDefined) triggerProposeFOpt
           else none[ProposeFunction[F]],
           conf.protocolServer.networkId,
@@ -417,18 +438,27 @@ object Setup {
           proposerStateRefOpt
         )
       }
-      heartbeatStream = {
+      heartbeatStreamAndSignal <- {
         implicit val ec = engineCell
         // Heartbeat should only run on bonded validator nodes
         // It will check the active validators set before proposing
         (validatorIdentityOpt, triggerProposeFOpt) match {
           case (Some(validatorIdentity), Some(triggerPropose)) =>
-            HeartbeatProposer.create[F](triggerPropose, validatorIdentity, conf.casper.heartbeat)
+            HeartbeatProposer.create[F](
+              triggerPropose,
+              validatorIdentity,
+              conf.casper.heartbeat,
+              conf.casper.maxNumberOfParents
+            )
           case _ =>
             // No validator identity or no propose function - skip heartbeat
-            Stream.empty
+            val noopSignal = new coop.rchain.casper.HeartbeatSignal[F] {
+              def triggerWake(): F[Unit] = Concurrent[F].unit
+            }
+            (Stream.empty.covary[F].asInstanceOf[Stream[F, Unit]], noopSignal).pure[F]
         }
       }
+      (heartbeatStream, heartbeatSignal) = heartbeatStreamAndSignal
     } yield (
       packetHandler,
       apiServers,

@@ -45,7 +45,9 @@ object CasperLaunch {
       proposeFOpt: Option[ProposeFunction[F]],
       conf: CasperConf,
       trimState: Boolean,
-      disableStateExporter: Boolean
+      disableStateExporter: Boolean,
+      onBlockFinalized: String => F[Unit],
+      standalone: Boolean
   ): CasperLaunch[F] =
     new CasperLaunch[F] {
       val casperShardConf = CasperShardConf(
@@ -66,7 +68,9 @@ object CasperLaunch {
         conf.genesisBlockData.quarantineLength,
         conf.minPhloPrice,
         conf.enableMergeableChannelGC,
-        conf.mergeableChannelsGCDepthBuffer
+        conf.mergeableChannelsGCDepthBuffer,
+        conf.disableLateBlockFiltering,
+        standalone // Use standalone directly to disable validator progress check
       )
       def launch(): F[Unit] =
         BlockStore[F].getApprovedBlock map {
@@ -142,11 +146,15 @@ object CasperLaunch {
         for {
           validatorId <- ValidatorIdentity.fromPrivateKeyWithLogging[F](conf.validatorPrivateKey)
           ab          = approvedBlock.candidate.block
+          // Create heartbeat signal ref for triggering fast proposals on deploy submission
+          heartbeatSignalRef <- Ref[F].of(Option.empty[HeartbeatSignal[F]])
           casper <- MultiParentCasper
                      .hashSetCasper[F](
                        validatorId,
                        casperShardConf,
-                       ab
+                       ab,
+                       heartbeatSignalRef,
+                       onBlockFinalized
                      )
           init = for {
             _ <- askPeersForForkChoiceTips
@@ -198,7 +206,8 @@ object CasperLaunch {
                   blocksInProcessing,
                   casperShardConf,
                   validatorId.get,
-                  bap
+                  bap,
+                  onBlockFinalized
                 )
               )
         } yield ()
@@ -236,7 +245,8 @@ object CasperLaunch {
                     blocksInProcessing,
                     casperShardConf,
                     validatorId,
-                    disableStateExporter
+                    disableStateExporter,
+                    onBlockFinalized
                   )
               )
           _ <- EngineCell[F].set(new GenesisCeremonyMaster[F](abp))
@@ -258,7 +268,8 @@ object CasperLaunch {
                 // from genesis to the most recent one (default)
                 CommUtil[F].requestApprovedBlock(trimState),
                 trimState,
-                disableStateExporter
+                disableStateExporter,
+                onBlockFinalized
               )
         } yield ()
 

@@ -52,7 +52,8 @@ class InitializingSpec extends WordSpec with BeforeAndAfterEach {
           blockResponseQueue,
           stateResponseQueue,
           trimState = true,
-          disableStateExporter = false
+          disableStateExporter = false,
+          onBlockFinalized = (_: String) => Task.unit
         )
 
       val approvedBlockCandidate = ApprovedBlockCandidate(block = genesis, requiredSigs = 0)
@@ -141,11 +142,13 @@ class InitializingSpec extends WordSpec with BeforeAndAfterEach {
         handlerInternal <- EngineCell[Task].read
         _               = assert(handlerInternal.isInstanceOf[Running[Task]])
 
-        // Assert requested messages for the state and fork choice tip
-        _        = assert(transportLayer.requests.size == expectedRequests.size)
-        messages = transportLayer.requests.map(_.msg)
-        _        = assert(messages.toSet == expectedRequests.toSet)
-        _        = transportLayer.reset()
+        // Assert all expected messages were requested (may include retries due to backoff)
+        messages = transportLayer.requests.map(_.msg).toSet
+        _ = assert(
+          expectedRequests.forall(messages.contains),
+          s"Missing expected requests. Got: $messages"
+        )
+        _ = transportLayer.reset()
 
         // assert that we really serve last approved block
         lastApprovedBlockO <- LastApprovedBlock[Task].get
